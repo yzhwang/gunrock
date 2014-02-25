@@ -67,6 +67,7 @@ struct Csr
     template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
     void FromScratch(SizeT nodes, SizeT edges)
     {
+        Free();
         this->nodes = nodes;
         this->edges = edges;
 
@@ -105,7 +106,7 @@ struct Csr
             }
 
         } else {
-
+            
             // Put our graph in regular memory
             row_offsets = (SizeT*) malloc(sizeof(SizeT) * (nodes + 1));
             column_indices = (VertexId*) malloc(sizeof(VertexId) * edges);
