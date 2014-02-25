@@ -29,7 +29,7 @@ namespace bfs {
  * @tparam ProblemData         Problem data type which contains data slice for BFS problem
  *
  */
-template<typename VertexId, typename SizeT, typename Value, typename ProblemData>
+template<typename VertexId, typename SizeT, typename ProblemData>
 struct BFSFunctor
 {
     typedef typename ProblemData::DataSlice DataSlice;
@@ -44,17 +44,13 @@ struct BFSFunctor
      *
      * \return Whether to load the apply function for the edge and include the destination node in the next frontier.
      */
-    static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id, DataSlice *problem, VertexId e_id = 0)
+    static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id, DataSlice *problem)
     {
-        if (ProblemData::ENABLE_IDEMPOTENCE) {
-            return true;
-        } else {
-            // Check if the destination node has been claimed as someone's child
-            if (ProblemData::MARK_PREDECESSORS)
-                return (atomicCAS(&problem->d_preds[d_id], -2, s_id) == -2) ? true : false;
-            else { 
-                return (atomicCAS(&problem->d_labels[d_id], -1, s_id+1) == -1) ? true : false;
-            }
+        // Check if the destination node has been claimed as someone's child
+        if (ProblemData::MARK_PREDECESSORS)
+            return (atomicCAS(&problem->d_preds[d_id], -2, s_id) == -2) ? true : false;
+        else { 
+            return (atomicCAS(&problem->d_labels[d_id], -1, s_id+1) == -1) ? true : false;
         }
     }
 
@@ -68,19 +64,15 @@ struct BFSFunctor
      * @param[in] problem Data slice object
      *
      */
-    static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id, DataSlice *problem, VertexId e_id = 0)
+    static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id, DataSlice *problem)
     {
-        if (ProblemData::ENABLE_IDEMPOTENCE) {
-            // do nothing here
-        } else {
-            //set d_labels[d_id] to be d_labels[s_id]+1
-            if (ProblemData::MARK_PREDECESSORS) {
-                VertexId label;
-                util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-                        label, problem->d_labels + s_id);
-                util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-                        label+1, problem->d_labels + d_id);
-            }
+        //set d_labels[d_id] to be d_labels[s_id]+1
+        if (ProblemData::MARK_PREDECESSORS) {
+            VertexId label;
+            util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
+                    label, problem->d_labels + s_id);
+            util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
+                    label+1, problem->d_labels + d_id);
         }
     }
 
@@ -92,7 +84,7 @@ struct BFSFunctor
      *
      * \return Whether to load the apply function for the node and include it in the outgoing vertex frontier.
      */
-    static __device__ __forceinline__ bool CondVertex(VertexId node, DataSlice *problem, Value v = 0)
+    static __device__ __forceinline__ bool CondVertex(VertexId node, DataSlice *problem)
     {
         return node != -1;
     }
@@ -104,14 +96,9 @@ struct BFSFunctor
      * @param[in] problem Data slice object
      *
      */
-    static __device__ __forceinline__ void ApplyVertex(VertexId node, DataSlice *problem, Value v = 0)
+    static __device__ __forceinline__ void ApplyVertex(VertexId node, DataSlice *problem)
     {
-        if (ProblemData::ENABLE_IDEMPOTENCE) {
-            util::io::ModifiedStore<util::io::st::cg>::St(
-                    v, problem->d_labels + node);
-        } else {
         // Doing nothing here
-        }
     }
 };
 
