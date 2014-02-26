@@ -29,10 +29,11 @@
 #include <gunrock/app/bfs/bfs_problem.cuh>
 #include <gunrock/app/bfs/bfs_functor.cuh>
 
+//#include <gunrock/app/pbfs/pbfs_enactor.cuh>
+
 // Operator includes
 #include <gunrock/oprtr/edge_map_forward/kernel.cuh>
 #include <gunrock/oprtr/vertex_map/kernel.cuh>
-
 
 using namespace gunrock;
 using namespace gunrock::util;
@@ -63,7 +64,6 @@ bool g_stream_from_host;
         "  market [<file>]\n"
         "    Reads a Matrix-Market coordinate-formatted graph of directed/undirected\n"
         "    edges from stdin (or from the optionally-specified file).\n"
-        
         "  --device=<device_index>  Set GPU device for running the graph primitive.\n"
         "  --undirected If set then treat the graph as undirected.\n"
         "  --instrumented If set then kernels keep track of queue-search_depth\n"
@@ -88,7 +88,7 @@ bool g_stream_from_host;
   * @param[in] MARK_PREDECESSORS Whether to show predecessor of each node.
   */
  template<typename VertexId, typename SizeT>
- void DisplaySolution(VertexId *source_path, VertexId *preds, SizeT nodes, bool MARK_PREDECESSORS, bool ENABLE_IDEMPOTENCE)
+ void DisplaySolution(VertexId *source_path, VertexId *preds, SizeT nodes, bool MARK_PREDECESSORS)
  {
     if (nodes > 40)
         nodes = 40;
@@ -97,10 +97,9 @@ bool g_stream_from_host;
         PrintValue(i);
         printf(":");
         PrintValue(source_path[i]);
-        if (MARK_PREDECESSORS && !ENABLE_IDEMPOTENCE) {
-            printf(",");
+        printf(",");
+        if (MARK_PREDECESSORS)
             PrintValue(preds[i]);
-        }
         printf(" ");
     }
     printf("]\n");
@@ -217,19 +216,15 @@ void DisplayStats(
  template<
     typename VertexId,
     typename Value,
-    typename SizeT,
-    bool MARK_PREDECESSORS>
+    typename SizeT>
 void SimpleReferenceBfs(
     const Csr<VertexId, Value, SizeT>       &graph,
     VertexId                                *source_path,
-    VertexId                                *predecessor,
     VertexId                                src)
 {
     //initialize distances
     for (VertexId i = 0; i < graph.nodes; ++i) {
         source_path[i] = -1;
-        if (MARK_PREDECESSORS)
-            predecessor[i] = -1;
     }
     source_path[src] = 0;
     VertexId search_depth = 0;
@@ -260,8 +255,6 @@ void SimpleReferenceBfs(
             VertexId neighbor = graph.column_indices[edge];
             if (source_path[neighbor] == -1) {
                 source_path[neighbor] = neighbor_dist;
-                if (MARK_PREDECESSORS)
-                    predecessor[neighbor] = dequeued_node;
                 if (search_depth < neighbor_dist) {
                     search_depth = neighbor_dist;
                 }
@@ -269,9 +262,6 @@ void SimpleReferenceBfs(
             }
         }
     }
-
-    if (MARK_PREDECESSORS)
-        predecessor[src] = -1;
 
     cpu_timer.Stop();
     float elapsed = cpu_timer.ElapsedMillis();
@@ -304,56 +294,57 @@ template <
     bool MARK_PREDECESSORS,
     bool ENABLE_IDEMPOTENCE>
 void RunTests(
-    const Csr<VertexId, Value, SizeT> &graph,
+    Csr<VertexId, Value, SizeT> &graph,
     VertexId src,
     int max_grid_size,
     int num_gpus,
-    double max_queue_sizing)
+    double max_queue_sizing,
+    std::string partition_method,
+    int*  gpu_idx)
 {
-        typedef BFSProblem<
-            VertexId,
-            SizeT,
-            Value,
-            MARK_PREDECESSORS,
-            ENABLE_IDEMPOTENCE,
-            (MARK_PREDECESSORS && ENABLE_IDEMPOTENCE)> Problem; // does not use double buffer
+    
+    typedef BFSProblem<
+        VertexId,
+        SizeT,
+        Value,
+        MARK_PREDECESSORS,
+        ENABLE_IDEMPOTENCE,
+        (MARK_PREDECESSORS && ENABLE_IDEMPOTENCE)> Problem; // does not use double buffer
 
         // Allocate host-side label array (for both reference and gpu-computed results)
         VertexId    *reference_labels       = (VertexId*)malloc(sizeof(VertexId) * graph.nodes);
-        VertexId    *reference_preds        = (VertexId*)malloc(sizeof(VertexId) * graph.nodes);
         VertexId    *h_labels               = (VertexId*)malloc(sizeof(VertexId) * graph.nodes);
-        VertexId    *reference_check_label  = (g_quick) ? NULL : reference_labels;
-        VertexId    *reference_check_preds  = NULL;
+        VertexId    *reference_check        = (g_quick) ? NULL : reference_labels;
         VertexId    *h_preds                = NULL;
         if (MARK_PREDECESSORS) {
             h_preds = (VertexId*)malloc(sizeof(VertexId) * graph.nodes);
-            if (!g_quick) {
-                reference_check_preds = reference_preds;
-            }
-            
         }
 
-
+        printf("RunTests begin.\n"); fflush(stdout);
         // Allocate BFS enactor map
-        BFSEnactor<INSTRUMENT> bfs_enactor(g_verbose);
+        BFSEnactor<INSTRUMENT>* bfs_enactor=new BFSEnactor<INSTRUMENT>(g_verbose);
+        printf("bfs_enactor created.\n"); fflush(stdout);
 
         // Allocate problem on GPU
         Problem *csr_problem = new Problem;
+        printf("problem created.\n"); fflush(stdout);
+
         util::GRError(csr_problem->Init(
             g_stream_from_host,
+            partition_method,
             graph,
-            num_gpus), "Problem BFS Initialization Failed", __FILE__, __LINE__);
+            num_gpus,gpu_idx), "Problem BFS Initialization Failed", __FILE__, __LINE__);
+        printf("problem inited.\n"); fflush(stdout);
 
         //
         // Compute reference CPU BFS solution for source-distance
         //
-        if (reference_check_label != NULL)
+        if (reference_check != NULL)
         {
             printf("compute ref value\n");
-            SimpleReferenceBfs<VertexId, Value, SizeT, MARK_PREDECESSORS>(
+            SimpleReferenceBfs(
                     graph,
-                    reference_check_label,
-                    reference_check_preds,
+                    reference_check,
                     src);
             printf("\n");
         }
@@ -367,12 +358,13 @@ void RunTests(
         // Perform BFS
         GpuTimer gpu_timer;
 
-        util::GRError(csr_problem->Reset(src, bfs_enactor.GetFrontierType(), max_queue_sizing), "BFS Problem Data Reset Failed", __FILE__, __LINE__);
+        util::GRError(csr_problem->Reset(src, bfs_enactor->GetFrontierType(), max_queue_sizing), "BFS Problem Data Reset Failed", __FILE__, __LINE__);
+        printf("BFSProblem reseted.\n"); fflush(stdout);
         gpu_timer.Start();
-        util::GRError(bfs_enactor.template Enact<Problem>(csr_problem, src, max_grid_size), "BFS Problem Enact Failed", __FILE__, __LINE__);
+        util::GRError(bfs_enactor->template Enact<Problem>(csr_problem, src, max_grid_size), "BFS Problem Enact Failed", __FILE__, __LINE__);
         gpu_timer.Stop();
 
-        bfs_enactor.GetStatistics(total_queued, search_depth, avg_duty);
+        bfs_enactor->GetStatistics(total_queued, search_depth, avg_duty);
 
         float elapsed = gpu_timer.ElapsedMillis();
 
@@ -380,20 +372,13 @@ void RunTests(
         util::GRError(csr_problem->Extract(h_labels, h_preds), "BFS Problem Data Extraction Failed", __FILE__, __LINE__);
 
         // Verify the result
-        if (reference_check_label != NULL) {
-            if (!ENABLE_IDEMPOTENCE) {
-                printf("Label Validity: ");
-                CompareResults(h_labels, reference_check_label, graph.nodes, true);
-            } else {
-                if (!MARK_PREDECESSORS) {
-                    printf("Label Validity: ");
-                    CompareResults(h_labels, reference_check_label, graph.nodes, true);
-                }
-            }
+        if (reference_check != NULL) {
+            printf("Validity: ");
+            CompareResults(h_labels, reference_check, graph.nodes, true);
         }
         printf("\nFirst 40 labels of the GPU result."); 
         // Display Solution
-        DisplaySolution(h_labels, h_preds, graph.nodes, MARK_PREDECESSORS, ENABLE_IDEMPOTENCE);
+        DisplaySolution(h_labels, h_preds, graph.nodes, MARK_PREDECESSORS);
 
         DisplayStats<MARK_PREDECESSORS>(
             *stats,
@@ -408,12 +393,14 @@ void RunTests(
 
         // Cleanup
         delete stats;
-        if (csr_problem) delete csr_problem;
-        if (reference_labels) free(reference_labels);
-        if (h_labels) free(h_labels);
-        if (h_preds) free(h_preds);
+        if (bfs_enactor)      {delete bfs_enactor;    bfs_enactor     =NULL;printf("bfs_enactor deleted.\n"   );fflush(stdout);}
+        if (csr_problem)      {delete csr_problem;    csr_problem     =NULL;printf("csr_problem deleted.\n"   );fflush(stdout);}
+        if (reference_labels) {free(reference_labels);reference_labels=NULL;printf("reference_labels freed.\n");fflush(stdout);}
+        if (h_labels)         {free(h_labels        );h_labels        =NULL;printf("h_labels freed.\n"        );fflush(stdout);}
+        if (h_preds)          {free(h_preds         );h_preds         =NULL;printf("h_preds freed.\n"         );fflush(stdout);}
 
         cudaDeviceSynchronize();
+        printf("RunTests end.\n"); fflush(stdout);
 }
 
 /**
@@ -442,6 +429,10 @@ void RunTests(
     int                 max_grid_size       = 0;            // maximum grid size (0: leave it up to the enactor)
     int                 num_gpus            = 1;            // Number of GPUs for multi-gpu enactor to use
     double              max_queue_sizing    = 1.0;          // Maximum size scaling factor for work queues (e.g., 1.0 creates n and m-element vertex and edge frontiers).
+    std::string         partition_method    = "random";
+    int*                gpu_idx             = NULL;
+
+    printf("RunTests begin.\n");fflush(stdout);
 
     instrumented = args.CheckCmdLineFlag("instrumented");
     args.GetCmdLineArgument("src", src_str);
@@ -463,7 +454,17 @@ void RunTests(
     idempotence = args.CheckCmdLineFlag("idempotence");
     args.GetCmdLineArgument("queue-sizing", max_queue_sizing);
     g_verbose = args.CheckCmdLineFlag("v");
+    if (args.CheckCmdLineFlag("partition_method")) args.GetCmdLineArgument("partition_method",partition_method);
+    if (args.CheckCmdLineFlag("device"))
+    {
+        
+    } else {
+        num_gpus   = 1;
+        gpu_idx    = new int[1];
+        gpu_idx[0] = -1;
+    }
 
+    printf("RunTests cmdLine reading finished.\n");fflush(stdout);
     if (instrumented) {
         if (mark_pred) {
             if (idempotence) {
@@ -472,14 +473,18 @@ void RunTests(
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             } else {
                 RunTests<VertexId, Value, SizeT, true, true, false>(
                         graph,
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             }
         } else {
             if (idempotence) {
@@ -488,14 +493,18 @@ void RunTests(
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             } else {
                 RunTests<VertexId, Value, SizeT, true, false, false>(
                         graph,
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             }
         }
     } else {
@@ -506,14 +515,18 @@ void RunTests(
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             } else {
                 RunTests<VertexId, Value, SizeT, false, true, false>(
                         graph,
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             }
         } else {
             if (idempotence) {
@@ -522,18 +535,23 @@ void RunTests(
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             } else {
                 RunTests<VertexId, Value, SizeT, false, false, false>(
                         graph,
                         src,
                         max_grid_size,
                         num_gpus,
-                        max_queue_sizing);
+                        max_queue_sizing,
+                        partition_method,
+                        gpu_idx);
             }
         }
     }
-
+    delete[] gpu_idx;gpu_idx=NULL;
+    printf("RunTests returned.\n"); fflush(stdout);
 }
 
 
@@ -598,7 +616,7 @@ int main( int argc, char** argv)
 		// Run tests
 		RunTests(csr, args);
 
-    } else {
+	} else {
 
 		// Unknown graph type
 		fprintf(stderr, "Unspecified graph type\n");
@@ -606,5 +624,6 @@ int main( int argc, char** argv)
 
 	}
 
+        printf("Program ending.\n"); fflush(stdout);
 	return 0;
 }

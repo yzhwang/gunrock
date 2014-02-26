@@ -134,6 +134,8 @@ struct ProblemBase
             for (int i = 0; i < 2; ++i)
             {
                 frontier_elements[i] = 0;
+                frontier_queues.d_keys[i]=NULL;
+                frontier_queues.d_values[i]=NULL;
             }
         }
 
@@ -142,34 +144,38 @@ struct ProblemBase
          */
         virtual ~GraphSlice()
         {
+            printf("~GraphSlice begin.\n"); fflush(stdout);
             // Set device (use slice index)
             util::GRError(cudaSetDevice(index), "GpuSlice cudaSetDevice failed", __FILE__, __LINE__);
 
+            printf("1"); fflush(stdout);
             // Free pointers
             if (d_row_offsets     ) util::GRError(cudaFree(d_row_offsets     ), 
-                                        "GpuSlice cudaFree d_row_offsets failed"     , __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_row_offsets failed"     , __FILE__, __LINE__); printf("2"); fflush(stdout);
             if (d_column_indices  ) util::GRError(cudaFree(d_column_indices  ), 
-                                        "GpuSlice cudaFree d_column_indices failed"  , __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_column_indices failed"  , __FILE__, __LINE__); printf("3"); fflush(stdout);
             if (d_convertion_table) util::GRError(cudaFree(d_convertion_table), 
-                                        "GpuSlice cudaFree d_convertion_table failed", __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_convertion_table failed", __FILE__, __LINE__); printf("4"); fflush(stdout);
             if (d_partition_table ) util::GRError(cudaFree(d_partition_table ),
-                                        "GpuSlice cudaFree d_partition_table failed" , __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_partition_table failed" , __FILE__, __LINE__); printf("5"); fflush(stdout);
             if (d_in_offset       ) util::GRError(cudaFree(d_in_offset       ),
-                                        "GpuSlice cudaFree d_in_offset failed"       , __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_in_offset failed"       , __FILE__, __LINE__); printf("6"); fflush(stdout);
             if (d_out_offset      ) util::GRError(cudaFree(d_out_offset      ),
-                                        "GpuSlice cudaFree d_out_offset failed"      , __FILE__, __LINE__);
+                                        "GpuSlice cudaFree d_out_offset failed"      , __FILE__, __LINE__); printf("7"); fflush(stdout);
 
             for (int i = 0; i < 2; ++i) {
-                if (frontier_queues.d_keys  [i]) util::GRError(cudaFree(frontier_queues.d_keys  [i]), 
-                                                     "GpuSlice cudaFree frontier_queues.d_keys failed"  , __FILE__, __LINE__);
+                printf(" %d,%d ",i,frontier_elements[i]); fflush(stdout);
+                //if (frontier_queues.d_keys  [i]) util::GRError(cudaFree(frontier_queues.d_keys  [i]), 
+                //                                     "GpuSlice cudaFree frontier_queues.d_keys failed"  , __FILE__, __LINE__); printf("8"); fflush(stdout);
                 if (frontier_queues.d_values[i]) util::GRError(cudaFree(frontier_queues.d_values[i]), 
-                                                     "GpuSlice cudaFree frontier_queues.d_values failed", __FILE__, __LINE__);
+                                                     "GpuSlice cudaFree frontier_queues.d_values failed", __FILE__, __LINE__); printf("9"); fflush(stdout);
             }
 
             /*// Destroy stream
             if (stream) {
                 util::GRError(cudaStreamDestroy(stream), "GpuSlice cudaStreamDestroy failed", __FILE__, __LINE__);
             }*/
+            printf("~GraphSlice end.\n"); fflush(stdout);
         }
 
         cudaError_t Init(
@@ -353,6 +359,7 @@ struct ProblemBase
                     }
 
                     frontier_elements[i] = new_frontier_elements[i];
+                    printf(" GraphicSlice %d,%d \n",i,frontier_elements[i]);fflush(stdout);
 
                     if (retval = util::GRError(cudaMalloc(
                                      (void**) &(frontier_queues.d_keys[i]),
@@ -423,6 +430,7 @@ public:
      */
     virtual ~ProblemBase()
     {
+        printf("~ProblemBase begin.\n"); fflush(stdout);
         // Cleanup graph slices on the heap
         for (int i = 0; i < num_gpus; ++i)
         {
@@ -450,6 +458,7 @@ public:
         }
         delete[] graph_slices; graph_slices = NULL;
         delete[] gpu_idx;      gpu_idx      = NULL;
+        printf("~ProblemBase end.\n"); fflush(stdout);
     }
 
     /**

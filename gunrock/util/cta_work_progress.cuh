@@ -214,7 +214,7 @@ public:
     cudaError_t HostReset()
     {
         cudaError_t retval = cudaSuccess;
-
+        printf("CtaWorkProgressLifetime HostReset begin.\n");fflush(stdout);
         do {
             if (gpu != GR_INVALID_DEVICE) {
 
@@ -222,14 +222,21 @@ public:
                 int current_gpu;
                 if (retval = util::GRError(cudaGetDevice(&current_gpu),
                     "CtaWorkProgress cudaGetDevice failed: ", __FILE__, __LINE__)) break;
+                printf("1");fflush(stdout);
 
                 // Deallocate
                 if (retval = util::GRError(cudaSetDevice(gpu),
                     "CtaWorkProgress cudaSetDevice failed: ", __FILE__, __LINE__)) break;
-                if (retval = util::GRError(cudaFree(d_counters),
-                    "CtaWorkProgress cudaFree d_counters failed: ", __FILE__, __LINE__)) break;
+                printf("2");fflush(stdout);
 
-                d_counters = NULL;
+                if (d_counters!=NULL) {
+                    printf("Freeing d_counter %p on gpu %d. \n", d_counters, gpu); fflush(stdout);
+                    //if (retval = util::GRError(cudaFree(d_counters),
+                    //"CtaWorkProgress cudaFree d_counters failed: ", __FILE__, __LINE__)) break;
+                }
+                d_counters=NULL;
+                printf("3");fflush(stdout);
+
                 gpu = GR_INVALID_DEVICE;
 
                 // Restore current gpu
@@ -240,7 +247,8 @@ public:
             progress_selector = 0;
 
         } while (0);
-
+        
+        printf("CtaWorkProgressLifetime HostReset end.\n"); fflush(stdout);
         return retval;
     }
 
@@ -272,9 +280,10 @@ public:
                 // Allocate and initialize
                 if (retval = util::GRError(cudaGetDevice(&gpu),
                     "CtaWorkProgress cudaGetDevice failed: ", __FILE__, __LINE__)) break;
-                if (retval = util::GRError(cudaMalloc((void**) &d_counters, sizeof(h_counters)),
+                if (retval = util::GRError(cudaMalloc((void**) &d_counters, sizeof(size_t) * COUNTERS),
                     "CtaWorkProgress cudaMalloc d_counters failed", __FILE__, __LINE__)) break;
-                if (retval = util::GRError(cudaMemcpy(d_counters, h_counters, sizeof(h_counters), cudaMemcpyHostToDevice),
+                printf("CtaWorkProgressLifetime Setup d_counter %p created on gpu %d.\n",d_counters,gpu);fflush(stdout);
+                if (retval = util::GRError(cudaMemcpy(d_counters, h_counters, sizeof(size_t) * COUNTERS, cudaMemcpyHostToDevice),
                     "CtaWorkProgress cudaMemcpy d_counters failed", __FILE__, __LINE__)) break;
             }
 

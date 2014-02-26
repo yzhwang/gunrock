@@ -105,6 +105,7 @@ namespace bfs {
         typedef BFSFunctor<
             VertexId,
             SizeT,
+            VertexId,
             BFSProblem> BfsFunctor;
         
         BFSProblem*  problem               =   thread_data->problem;
@@ -119,7 +120,7 @@ namespace bfs {
         int          vertex_map_grid_size  =   thread_data->vertex_map_grid_size;
         cudaError_t* retval                = &(enactor    ->retvals        [thread_num]);
         //volatile int* done               =  (enactor    ->dones          [thread_num]);
-        int*         d_done                =  (enactor    ->d_dones        [thread_num]);
+        volatile int* d_done               =  (enactor    ->d_dones        [thread_num]);
         int*         iteration             = &(enactor    ->iterations     [thread_num]);
         cudaEvent_t* throttle_event        = &(enactor    ->throttle_events[thread_num]);
         volatile int** dones               =   enactor    ->dones;
@@ -160,7 +161,7 @@ namespace bfs {
             
             VertexId *h_cur_queue = new VertexId[graph_slice->edges];
             while (!All_Done(dones,retvals,num_gpus)) {
-
+                printf("gpu = %d iteration = %d begin. \n", gpu, iteration[0]); fflush(stdout);
                 // Edge Map
                 gunrock::oprtr::edge_map_forward::Kernel<EdgeMapPolicy, BFSProblem, BfsFunctor>
                     <<<edge_map_grid_size, EdgeMapPolicy::THREADS>>>(
@@ -171,6 +172,7 @@ namespace bfs {
                     num_elements,
                     d_done,
                     graph_slice->frontier_queues.d_keys[selector],              // d_in_queue
+                    graph_slice->frontier_queues.d_values[selector^1],          // d_pred_out_queue
                     graph_slice->frontier_queues.d_keys[selector^1],            // d_out_queue
                     graph_slice->d_column_indices,
                     d_data_slice,
@@ -229,14 +231,17 @@ namespace bfs {
                 // Vertex Map
                 gunrock::oprtr::vertex_map::Kernel<VertexMapPolicy, BFSProblem, BfsFunctor>
                 <<<vertex_map_grid_size, VertexMapPolicy::THREADS>>>(
+                    iteration[0]+1,
                     queue_reset,
                     queue_index,
                     1,
                     num_elements,
                     d_done,
                     graph_slice->frontier_queues.d_keys[selector],      // d_in_queue
+                    graph_slice->frontier_queues.d_values[selector],    // d_pred_in_queue
                     graph_slice->frontier_queues.d_keys[selector^1],    // d_out_queue
                     d_data_slice,
+                    data_slice->d_visited_mask,
                     work_progress[0],
                     graph_slice->frontier_elements[selector],           // max_in_queue
                     graph_slice->frontier_elements[selector^1],         // max_out_queue
@@ -359,6 +364,7 @@ namespace bfs {
                     if (retval [0]) break;
                     if (retval[0] = work_progress->SetQueueLength(queue_index,data_slice->out_length[0])) break;
                 }
+                printf("gpu = %d iteration = %d finish.\n", gpu, iteration[0]);fflush(stdout);
             }
 
             delete[] h_cur_queue;
@@ -372,6 +378,7 @@ namespace bfs {
             }
         } while(0);
 
+        printf("BFSThread end.\n"); fflush(stdout);
         CUT_THREADEND; 
     }
 
@@ -456,7 +463,8 @@ public:
                 //if (!dones[gpu]) {
                     //if (num_gpus != 1) 
                         if (retval = util::GRError(cudaSetDevice(gpu_idx[gpu]), "BFSEnactor cudaSetDevice gpu failed", __FILE__, __LINE__)) break;
-                    int flags = cudaHostAllocMapped;printf("1");
+                    int flags = cudaHostAllocMapped;
+                    work_progress[gpu].Setup();
 
                     // Allocate pinned memory for done
                     if (retval = util::GRError(cudaHostAlloc((void**)&(dones[gpu]), sizeof(int) * 1, flags),
@@ -542,6 +550,7 @@ public:
      */
     virtual ~BFSEnactor()
     {
+        printf("~BFSEnactor begin.\n"); fflush(stdout);
         if (All_Done(dones,retvals,num_gpus)) {
             for (int gpu=0;gpu<num_gpus;gpu++)
             {
@@ -555,17 +564,19 @@ public:
                 util::GRError(cudaEventDestroy(throttle_events[gpu]),
                     "BFSEnactor cudaEventDestroy throttle_event failed", __FILE__, __LINE__);
             }
-            delete[] dones;          dones           = NULL;
-            delete[] throttle_events;throttle_events = NULL;
-            delete[] retvals;        retvals         = NULL;
-            delete[] iterations;     iterations      = NULL;
-            delete[] total_runtimes; total_runtimes  = NULL;
-            delete[] total_lifetimes;total_lifetimes = NULL;
-            delete[] total_queued;   total_queued    = NULL;
-            delete[] work_progress;  work_progress   = NULL;
-            delete[]   edge_map_kernel_stats;  edge_map_kernel_stats = NULL;
-            delete[] vertex_map_kernel_stats;vertex_map_kernel_stats = NULL; 
+            printf("dones & throttle_events on gpu freed\n"); fflush(stdout);
+            delete[] dones;          dones           = NULL; printf("dones deleted.\n"          ); fflush(stdout);
+            delete[] throttle_events;throttle_events = NULL; printf("throttle_events deleted.\n"); fflush(stdout);
+            delete[] retvals;        retvals         = NULL; printf("retvals deleted.\n"        ); fflush(stdout);
+            delete[] iterations;     iterations      = NULL; printf("iterations deleted.\n"     ); fflush(stdout);
+            delete[] total_runtimes; total_runtimes  = NULL; printf("total_runtimes deleted.\n" ); fflush(stdout);
+            delete[] total_lifetimes;total_lifetimes = NULL; printf("total_lifetimes deleted.\n"); fflush(stdout);
+            delete[] total_queued;   total_queued    = NULL; printf("total_queued deleted.\n"   ); fflush(stdout);
+            delete[] work_progress;  work_progress   = NULL; printf("work_progress deleted.\n"  ); fflush(stdout);
+            delete[]   edge_map_kernel_stats;  edge_map_kernel_stats = NULL; printf("edge_map_kernel_stats deleted.\n"); fflush(stdout);
+            delete[] vertex_map_kernel_stats;vertex_map_kernel_stats = NULL; printf("vertex_map_kernel_stats deleted.\n"); fflush(stdout);
         }
+        printf("~BFSEnactor end.\n"); fflush(stdout);
     }
 
     /**
@@ -688,15 +699,24 @@ public:
             }
 
             cutWaitForThreads(thread_Ids,num_gpus);
+            printf("BFSThreads finished.\n"); fflush(stdout);
             cutDestroyBarrier(cpu_barrier);
             delete[] cpu_barrier;cpu_barrier=NULL;
 
             for (int gpu=0;gpu<num_gpus;gpu++)
             if (this->retvals[gpu]!=cudaSuccess) {retval=this->retvals[gpu];break;}
         } while (0);
-        if (DEBUG) printf("\nGPU BFS Done.\n");
-        delete[] thread_Ids;   thread_Ids    = NULL;
-        delete[] thread_slices;thread_slices = NULL;
+        if (retval) return retval;
+        if (DEBUG) {printf("\nGPU BFS Done.\n");fflush(stdout);}
+        for (int gpu=0; gpu<num_gpus;gpu++)
+        {
+            thread_slices[gpu].problem = NULL;
+            thread_slices[gpu].enactor = NULL;
+            thread_slices[gpu].cpu_barrier = NULL;
+        }
+        printf("..\n");fflush(stdout);
+        //delete[] thread_Ids;   thread_Ids    = NULL; printf("thread_Ids freed.\n"); fflush(stdout);
+        //delete[] thread_slices;thread_slices = NULL; printf("thread_slices freed.\n"); fflush(stdout);
         printf("BFSEnact finished.\n"); fflush(stdout);
         return retval;
     }
@@ -731,10 +751,11 @@ public:
                 0,                                  // SATURATION QUIT
                 true,                               // DEQUEUE_PROBLEM_SIZE
                 8,                                  // MIN_CTA_OCCUPANCY
-                6,                                  // LOG_THREADS
+                8,                                  // LOG_THREADS
                 1,                                  // LOG_LOAD_VEC_SIZE
                 0,                                  // LOG_LOADS_PER_TILE
                 5,                                  // LOG_RAKING_THREADS
+                5,                                  // END_BITMASK_CULL
                 8>                                  // LOG_SCHEDULE_GRANULARITY
                 VertexMapPolicy;
 

@@ -35,7 +35,7 @@ protected:
     util::CudaProperties cuda_props;
     
     // Queue size counters and accompanying functionality
-    util::CtaWorkProgressLifetime work_progress;
+    //util::CtaWorkProgressLifetime work_progress;
 
     FrontierType frontier_type;
 
@@ -60,7 +60,7 @@ protected:
     {
         // Setup work progress (only needs doing once since we maintain
         // it in our kernel code)
-        work_progress.Setup();
+        //work_progress.Setup();
     }
 
     /**

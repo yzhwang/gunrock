@@ -16,6 +16,8 @@
  */
 
 #pragma once
+#include <stdio.h>
+
 #include <gunrock/util/cta_work_distribution.cuh>
 #include <gunrock/util/cta_work_progress.cuh>
 #include <gunrock/util/kernel_runtime_stats.cuh>

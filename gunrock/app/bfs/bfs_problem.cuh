@@ -34,14 +34,15 @@ template <
     typename    VertexId,                       
     typename    SizeT,                          
     typename    Value,                          
-    bool        _MARK_PREDECESSORS,             
+    bool        _MARK_PREDECESSORS,
+    bool        _ENABLE_IDEMPOTENCE,             
     bool        _USE_DOUBLE_BUFFER>
 struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
                                 _USE_DOUBLE_BUFFER>
 {
 
     static const bool MARK_PREDECESSORS     = _MARK_PREDECESSORS;
-    
+    static const bool ENABLE_IDEMPOTENCE    = _ENABLE_IDEMPOTENCE; 
 
     //Helper structures
 
@@ -53,6 +54,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
         // device storage arrays
         VertexId        *d_labels;              /**< Used for source distance */
         VertexId        *d_preds;               /**< Used for predecessor */
+        unsigned char   *d_visited_mask;        /**< used for bitmask for visited nodes */
         int             num_associate,gpu_idx;
         VertexId        **d_associate_in;
         VertexId        **h_associate_in;
@@ -85,6 +87,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
 
         ~DataSlice()
         {
+            printf("~DataSlice begin.\n"); fflush(stdout);
             util::GRError(cudaSetDevice(gpu_idx),
                 "~DataSlice cudaSetDevice failed", __FILE__, __LINE__);
             if (d_labels) util::GRError(cudaFree(d_labels), "~DataSlice cudaFree d_labels failed", __FILE__, __LINE__);
@@ -126,6 +129,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
                 d_associate_org = NULL;
                 h_associate_org = NULL;
             }
+            printf("~DataSlice end.\n"); fflush(stdout);
         }
 
         cudaError_t Init(
@@ -285,6 +289,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
      */
     ~BFSProblem()
     {
+        printf("~BFSProblem begin.\n");fflush(stdout);
         for (int i = 0; i < this->num_gpus; ++i)
         {
             if (util::GRError(cudaSetDevice(this->gpu_idx[i]),
@@ -297,6 +302,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
         }
         if (d_data_slices) delete[] d_data_slices;
         if (data_slices  ) delete[] data_slices;
+        printf("~BFSProblem end.\n");fflush(stdout);
     }
 
     /**
