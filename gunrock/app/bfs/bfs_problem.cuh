@@ -140,7 +140,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
             SizeT num_in_nodes,
             SizeT num_out_nodes)
         {
-            printf("DataSlice Init begin."); fflush(stdout);
+            printf("%d: DataSlice Init begin.\n", gpu_idx); fflush(stdout);
 
             cudaError_t retval = cudaSuccess;
             this->gpu_idx       = gpu_idx;
@@ -158,9 +158,10 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
 
             if (num_associate != 0)
             {
+                printf("%d: num_associate = %d\n", gpu_idx, num_associate);
                 h_associate_org = new VertexId*[num_associate];
                 h_associate_org[0] = d_labels;
-                h_associate_org[1] = d_preds;
+                if (_MARK_PREDECESSORS) h_associate_org[1] = d_preds;
                 if (retval = util::GRError(cudaMalloc((void**)&(d_associate_org), num_associate * sizeof(VertexId*)),
                                 "DataSlice cudaMalloc d_associate_org failed", __FILE__, __LINE__)) return retval;
                 if (retval = util::GRError(cudaMemcpy(d_associate_org, h_associate_org, 
@@ -170,6 +171,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
             // Create incoming buffer on device
             if (num_in_nodes > 0)
             {
+                printf("%d: num_in_nodes = %d\n", gpu_idx, num_in_nodes); fflush(stdout);
                 h_associate_in = new VertexId*[num_associate];
                 for (int i=0;i<num_associate;i++)
                 {
@@ -185,6 +187,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
                                 num_associate * sizeof(VertexId*),cudaMemcpyHostToDevice),
                                 "DataSlice cudaMemcpy d_associate_in failed", __FILE__, __LINE__)) return retval;
                 in_length  = new SizeT[num_gpus];
+                memset(in_length,0,sizeof(SizeT)*num_gpus);
                 //if (retval = util::GRError(cudaMalloc((void**)&(d_in_length),  num_gpus * sizeof(SizeT)),
                 //                "DataSlice cudaMalloc d_in_length failed",    __FILE__, __LINE__)) return retval;
             }
@@ -192,6 +195,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
              // Create outgoing buffer on device
             if (num_out_nodes > 0)
             {
+                printf("%d: num_out_nodes = %d\n", gpu_idx, num_out_nodes); fflush(stdout);
                 h_associate_out = new VertexId*[num_associate];
                 for (int i=0;i<num_associate;i++)
                 {
@@ -205,10 +209,11 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
                                 num_associate * sizeof(VertexId*),cudaMemcpyHostToDevice),
                                 "DataSlice cudaMemcpy d_associate_out failed", __FILE__, __LINE__)) return retval;
                 out_length = new SizeT[num_gpus];
+                memset(out_length, 0, sizeof(SizeT)*num_gpus);
                 if (retval = util::GRError(cudaMalloc((void**)&(d_out_length), num_gpus * sizeof(SizeT)),
                                 "DataSlice cuaMalloc d_out_length failed",     __FILE__, __LINE__)) return retval;
             }
-            printf("DataSlice Init finished."); fflush(stdout);
+            printf("%d: DataSlice Init finished.\n", gpu_idx); fflush(stdout);
             return retval;
         }
     };
@@ -292,6 +297,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
         printf("~BFSProblem begin.\n");fflush(stdout);
         for (int i = 0; i < this->num_gpus; ++i)
         {
+            delete data_slices[i]; data_slices[i]=NULL;
             if (util::GRError(cudaSetDevice(this->gpu_idx[i]),
                 "~BFSProblem cudaSetDevice failed", __FILE__, __LINE__)) break;
             //if (data_slices[i]->d_labels)    util::GRError(cudaFree(data_slices[i]->d_labels), "GpuSlice cudaFree d_labels failed", __FILE__, __LINE__);
@@ -300,8 +306,8 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
             //if (data_slices[i]->d_obuffer)   util::GRError(cudaFree(data_slices[i]->d_obuffer), "GpuSlice cudaFree d_obuffer failed", __FILE__, __LINE__);
             if (d_data_slices[i]) util::GRError(cudaFree(d_data_slices[i]), "~BFSProblem cudaFree data_slices failed", __FILE__, __LINE__);
         }
-        if (d_data_slices) delete[] d_data_slices;
-        if (data_slices  ) delete[] data_slices;
+        if (d_data_slices) delete[] d_data_slices; d_data_slices=NULL;
+        if (data_slices  ) delete[] data_slices; data_slices=NULL;
         printf("~BFSProblem end.\n");fflush(stdout);
     }
 
@@ -426,7 +432,7 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
             //partition_table,
             //convertion_table);
             );
-       
+        printf("ProblemBase Init returned.\n"); fflush(stdout); 
         // No data in DataSlice needs to be copied from host
 
         /**
@@ -482,10 +488,15 @@ struct BFSProblem : ProblemBase<VertexId, SizeT, Value,
 
                     if (this->num_gpus > 1)
                     {
-                        data_slices[gpu]->Init(this->num_gpus, this->gpu_idx[gpu], 2, 
-                            this->sub_graphs[gpu].nodes,
-                            this->graph_slices[gpu]->in_offset[this->num_gpus],
-                            this->graph_slices[gpu]->out_offset[this->num_gpus]);
+                        if (_MARK_PREDECESSORS)
+                            data_slices[gpu]->Init(this->num_gpus, this->gpu_idx[gpu], 2, 
+                                this->sub_graphs[gpu].nodes,
+                                this->graph_slices[gpu]->in_offset[this->num_gpus],
+                                this->graph_slices[gpu]->out_offset[this->num_gpus]-this->graph_slices[gpu]->out_offset[1]);
+                        else   data_slices[gpu]->Init(this->num_gpus, this->gpu_idx[gpu], 1, 
+                                this->sub_graphs[gpu].nodes,
+                                this->graph_slices[gpu]->in_offset[this->num_gpus],
+                                this->graph_slices[gpu]->out_offset[this->num_gpus]-this->graph_slices[gpu]->out_offset[1]);
                     } else {
                         data_slices[gpu]->Init(this->num_gpus,this->gpu_idx[gpu], 0,
                             this->sub_graphs[gpu].nodes, 0, 0);

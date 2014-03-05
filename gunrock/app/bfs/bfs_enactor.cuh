@@ -15,6 +15,7 @@
 #pragma once
 
 #include <gunrock/util/multithreading.cuh>
+#include <gunrock/util/multithread_utils.cuh>
 #include <gunrock/util/kernel_runtime_stats.cuh>
 #include <gunrock/util/test_utils.cuh>
 #include <gunrock/util/scan/multi_scan.cuh>
@@ -35,22 +36,39 @@ namespace bfs {
 
     template <bool INSTRUMENT> class BFSEnactor;
 
-    template<
-        bool     INSTRUMENT,
-        typename EdgeMapPolicy,
-        typename VertexMapPolicy,
-        typename BFSProblem>
-    struct ThreadSlice
+    //template<
+    //    bool     INSTRUMENT,
+    //    typename BFSProblem>
+    class ThreadSlice
     {
+    public:
         int           thread_num;
         int           init_size;
         int           max_grid_size;
         int           edge_map_grid_size;
         int           vertex_map_grid_size;
         CUTThread     thread_Id;
-        CUTBarrier*   cpu_barrier;
-        BFSProblem*   problem;
-        BFSEnactor<INSTRUMENT>*   enactor;
+        util::cpu_mt::CPUBarrier* cpu_barrier;
+        //BFSProblem*   problem;
+        //BFSEnactor<INSTRUMENT>*   enactor;
+        void*         problem;
+        void*         enactor;
+
+        ThreadSlice()
+        {
+            printf("ThreadSlice() called.\n"); fflush(stdout);
+            cpu_barrier = NULL;
+            problem     = NULL;
+            enactor     = NULL;
+        }
+
+        virtual ~ThreadSlice()
+        {
+            printf("~ThreadSlice() called. \n"); fflush(stdout);
+            cpu_barrier = NULL;
+            problem     = NULL;
+            enactor     = NULL;
+        }
     };
  
     template <typename VertexId, typename SizeT, bool MARK_PREDECESSORS>
@@ -70,7 +88,7 @@ namespace bfs {
         keys_out[x]=key;
         if (num_associates <1) return;
         VertexId t=associate_in[0][incoming_offset+x];
-        if (t >= associate_out[0][key]) return;
+        if (t >= associate_out[0][key] && associate_out[0][key]>=0) return;
         associate_out[0][key]=t;
         for (SizeT i=1;i<num_associates;i++)
         {   
@@ -81,12 +99,33 @@ namespace bfs {
     bool All_Done(volatile int **dones, cudaError_t *retvals,int num_gpus)
     {
         for (int gpu=0;gpu<num_gpus;gpu++)
-          if (retvals[gpu]!=cudaSuccess) return true;
+          if (retvals[gpu]!=cudaSuccess) {printf("Err: gpu=%d\n", gpu); fflush(stdout); return true;}
         for (int gpu=0;gpu<num_gpus;gpu++)
-          if (dones[gpu][0]!=0) return false;
+          if (dones[gpu][0]!=0) {printf("not finish: gpu=%d\n", gpu); fflush(stdout); return false;}
         return true;
     }
 
+   /*template<
+        bool     INSTRUMENT,
+        typename EdgeMapPolicy,
+        typename VertexMapPolicy,
+        typename BFSProblem>
+   static CUT_THREADPROC BFSThread_new(
+        void * thread_data_)
+    {
+        //printf("BFSThread begin.\n"); fflush(stdout);
+
+        ThreadSlice //<INSTRUMENT, BFSProblem> *
+            * thread_data = (ThreadSlice *) thread_data_;
+        int thread_num = thread_data->thread_num;
+        BFSProblem* problem = thread_data->problem;
+        int gpu = problem->gpu_idx[thread_num];
+
+        cudaSetDevice(gpu);
+        while (true) {int i=i+1;}
+        CUT_THREADEND;
+    }*/
+ 
    template<
         bool     INSTRUMENT,
         typename EdgeMapPolicy,
@@ -95,10 +134,10 @@ namespace bfs {
    static CUT_THREADPROC BFSThread(
         void * thread_data_)
     {
-        printf("BFSThread begin.\n"); fflush(stdout);
+        //printf("BFSThread begin.\n"); fflush(stdout);
 
-        ThreadSlice <INSTRUMENT, EdgeMapPolicy, VertexMapPolicy, BFSProblem> *
-            thread_data = (ThreadSlice <INSTRUMENT, EdgeMapPolicy, VertexMapPolicy, BFSProblem> *) thread_data_;
+        ThreadSlice //<INSTRUMENT, BFSProblem> *
+            * thread_data = (ThreadSlice *) thread_data_;
         typedef typename BFSProblem::SizeT      SizeT;
         typedef typename BFSProblem::VertexId   VertexId;
 
@@ -108,12 +147,14 @@ namespace bfs {
             VertexId,
             BFSProblem> BfsFunctor;
         
-        BFSProblem*  problem               =   thread_data->problem;
-        BFSEnactor<INSTRUMENT>*  enactor   =   thread_data->enactor;
+        SizeT*       out_offset;
+        char*         message               = new char [1024];
+        BFSProblem*  problem               =   (BFSProblem*) thread_data->problem;
+        BFSEnactor<INSTRUMENT>*  enactor   =   (BFSEnactor<INSTRUMENT>*)thread_data->enactor;
         int          thread_num            =   thread_data->thread_num;
-        CUTBarrier*  cpu_barrier           =   thread_data->cpu_barrier;
+        util::cpu_mt::CPUBarrier* cpu_barrier =   thread_data->cpu_barrier;
         int          gpu                   =   problem    ->gpu_idx        [thread_num];
-        int*         gpu_idx               =   problem    ->gpu_idx;
+        //int*         gpu_idx               =   problem    ->gpu_idx;
         int          num_gpus              =   problem    ->num_gpus;
         //int          max_grid_size         =   thread_data->max_grid_size;
         int          edge_map_grid_size    =   thread_data->edge_map_grid_size;
@@ -143,25 +184,51 @@ namespace bfs {
         util::KernelRuntimeStatsLifetime*
                      vertex_map_kernel_stats = &(enactor->vertex_map_kernel_stats[thread_num]);
         util::scan::MultiScan<VertexId,SizeT,true,256,8> *Scaner = NULL;
+        //char message[512]="";
 
-      //cudaError_t retval = cudaSuccess;
+        //printf("%d: Assigment finished.\n", gpu); fflush(stdout);
+        //cudaError_t retval = cudaSuccess;
 
-        if (num_gpus >1) Scaner=new util::scan::MultiScan<VertexId,SizeT,true,256,8>;
-
-        do {
-            if ( retval[0] = util::GRError(cudaSetDevice(gpu), "BFSThread cudaSetDevice failed", __FILE__, __LINE__)) break; 
-            SizeT    queue_length   = thread_data->init_size;
+        if (num_gpus >1) 
+        {
+            Scaner=new util::scan::MultiScan<VertexId,SizeT,true,256,8>;
+            //printf("%d: Scanner created.\n", gpu); fflush(stdout);
+            out_offset=new SizeT[num_gpus+1];
+        }
+        do {  
+            //char message[]="BFSThread cudaSetDevice failed.";
+            //message = "BFSThread cudaSetDevice failed.";
+            //cudaSetDevice(gpu);
+            //while (true) {int i=gpu+1;}
+            //if (retval [0]) { retval[0] = util::GRError(retval [0], message, __FILE__, __LINE__); break; }
+            if ( retval[0] = util::GRError(cudaSetDevice(gpu), "BFSThread cudaSetDevice failed." , __FILE__, __LINE__)) break; 
+            //printf("%d: Gpu set. Init_size = %d \n", gpu, thread_data->init_size); fflush(stdout); 
+            //SizeT    queue_length   = thread_data->init_size;
             VertexId queue_index    = 0;        // Work queue index
             int      selector       = 0;
             SizeT    num_elements   = thread_data->init_size; //?
             bool     queue_reset    = true; 
-
-            fflush(stdout);
+            //fflush(stdout);
             // Step through BFS iterations
-            
+                        
             VertexId *h_cur_queue = new VertexId[graph_slice->edges];
             while (!All_Done(dones,retvals,num_gpus)) {
-                printf("gpu = %d iteration = %d begin. \n", gpu, iteration[0]); fflush(stdout);
+                util::cpu_mt::PrintMessage("iteration begin.", gpu, iteration[0]);
+                if (DEBUG) {
+                    SizeT _queue_length;
+                    if (queue_reset) _queue_length = num_elements;
+                    else if (retval[0] = work_progress->GetQueueLength(queue_index, _queue_length)) break;
+                    sprintf(message,"queue_length before edge_map_forward = %lld.", (long long) _queue_length);
+                    util::cpu_mt::PrintMessage(message, gpu, iteration[0]);
+                    util::cpu_mt::PrintGPUArray("0d_keys     ",graph_slice->frontier_queues.d_keys[selector], _queue_length, gpu, iteration[0]);
+                    util::cpu_mt::PrintGPUArray("0d_labels   ",data_slice->d_labels,graph_slice->nodes, gpu,iteration[0]);
+                    if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray("0d_preds    ", data_slice->d_preds, graph_slice->nodes, gpu, iteration[0]);
+                    if (retval[0] = work_progress->SetQueueLength(queue_index+1, 0)) break;
+                    if (retval[0] = work_progress->GetQueueLength(queue_index+1, _queue_length)) break;
+                    sprintf(message,"queue_length1 before edge_map_forward = %lld.", (long long) _queue_length);
+                    util::cpu_mt::PrintMessage(message, gpu, iteration[0]);
+                }
+
                 // Edge Map
                 gunrock::oprtr::edge_map_forward::Kernel<EdgeMapPolicy, BFSProblem, BfsFunctor>
                     <<<edge_map_grid_size, EdgeMapPolicy::THREADS>>>(
@@ -187,14 +254,18 @@ namespace bfs {
                 // Only need to reset queue for once
                 if (queue_reset)
                     queue_reset = false;
-
+               
                 queue_index++;
                 selector ^= 1;
-                
                 if (DEBUG) {
-                    if (retval[0] = work_progress->GetQueueLength(queue_index, queue_length)) break;
-                    printf(", %lld", (long long) queue_length);
-
+                    SizeT _queue_length;
+                    if (retval[0] = work_progress->GetQueueLength(queue_index, _queue_length)) break;
+                    sprintf(message,"queue_length after edge_map_forward = %lld.", (long long) _queue_length);
+                    util::cpu_mt::PrintMessage(message, gpu, iteration[0]);
+                    util::cpu_mt::PrintGPUArray("1d_keys     ",graph_slice->frontier_queues.d_keys[selector], _queue_length, gpu, iteration[0]);
+                    util::cpu_mt::PrintGPUArray("1d_labels   ",data_slice->d_labels,graph_slice->nodes, gpu, iteration[0]);
+                    if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray("1d_preds    ",data_slice->d_preds, graph_slice->nodes, gpu, iteration[0]);
+                    if (retval[0] = work_progress->SetQueueLength(queue_index+1, 0)) break;
                     /*if (iteration == 2) {
                         cudaMemcpy(h_cur_queue, graph_slice->frontier_queues.d_keys[selector], sizeof(VertexId)*queue_length, cudaMemcpyDeviceToHost);
                         int neg_num = 0;
@@ -252,12 +323,19 @@ namespace bfs {
 
                 queue_index++;
                 selector ^= 1;
-                iteration[0]++;
 
                 if (INSTRUMENT || DEBUG) {
-                    if (retval[0] = work_progress->GetQueueLength(queue_index, queue_length)) break;
-                    total_queued[0] += queue_length;
-                    if (DEBUG) printf(", %lld", (long long) queue_length);
+                    SizeT _queue_length;
+                    if (retval[0] = work_progress->GetQueueLength(queue_index, _queue_length)) break;
+                    total_queued[0] += _queue_length;
+                    if (DEBUG) 
+                    {
+                        sprintf(message,"queue_length after vertex_map = %lld.", (long long) _queue_length);
+                        util::cpu_mt::PrintMessage(message, gpu, iteration[0]);
+                        util::cpu_mt::PrintGPUArray("2d_keys     ",graph_slice->frontier_queues.d_keys[selector], _queue_length, gpu, iteration[0]);
+                        util::cpu_mt::PrintGPUArray("2d_labels   ",data_slice->d_labels,graph_slice->nodes, gpu, iteration[0]);
+                        if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray("2d_preds    ",data_slice->d_preds, graph_slice->nodes, gpu, iteration[0]);
+                    }
                     if (INSTRUMENT) {
                         if (retval[0] = vertex_map_kernel_stats->Accumulate(
                             vertex_map_grid_size,
@@ -269,7 +347,7 @@ namespace bfs {
                 //if (done[0] == 0) break;
                 if (All_Done(dones,retvals,num_gpus)) break;
 
-                if (DEBUG) printf("\n%lld", (long long) iteration);
+                //if (DEBUG) printf("%d: iteration = %lld num_elements= %lld\n", gpu, (long long) iteration[0], (long long) num_elements); fflush(stdout);
 
                 //Use multi_scan to splict the workload into multi_gpus
                 if (num_gpus >1)
@@ -277,65 +355,138 @@ namespace bfs {
                     // Split the frontier into multiple frontiers for multiple GPUs, local remains infront
                     SizeT n;
                     if (retval[0] = work_progress->GetQueueLength(queue_index, n)) break;
-                    Scaner->Scan_with_Keys(n,
+                    if (n >0)
+                    {
+                        sprintf(message,"n = %d frontier_elements = %d,%d", n, graph_slice->frontier_elements[selector],graph_slice->frontier_elements[selector^1]);
+                        util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                        util::cpu_mt::PrintGPUArray<SizeT,VertexId>("3d_keys     ",graph_slice->frontier_queues.d_keys[selector],n, gpu,iteration[0]);
+                        util::cpu_mt::PrintGPUArray<SizeT,VertexId>("3d_labels   ",data_slice->d_labels,graph_slice->nodes, gpu, iteration[0]);
+                        if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray<SizeT,VertexId>("3d_preds    ",data_slice->d_preds, graph_slice->nodes, gpu, iteration[0]);
+                        //util::cpu_mt::PrintGPUArray<SizeT,VertexId>("3d_associate",data_slice->h_associate_org[0],graph_slice->out_offset[num_gpus],gpu,iteration[0]);
+                        util::cpu_mt::PrintGPUArray<SizeT,int     >("3d_split    ",graph_slice->d_partition_table, graph_slice->out_offset[num_gpus],gpu,iteration[0]);
+                        //util::cpu_mt::PrintGPUArray<SizeT,int     >("d_ooff",gpu,graph_slice->d_out_offset, num_gpus);
+                        Scaner->Scan_with_Keys(n,
                                   num_gpus,
                                   data_slice->num_associate,
                                   graph_slice->frontier_queues.d_keys[selector],
                                   graph_slice->frontier_queues.d_keys[selector^1],
                                   graph_slice->d_partition_table,
                                   graph_slice->d_convertion_table,
-                                  graph_slice->d_out_offset,
+                                  //graph_slice->d_out_offset,
                                   data_slice ->d_out_length,
                                   data_slice ->d_associate_org,
                                   data_slice ->d_associate_out);
-                    if (retval[0] = util::GRError(cudaMemcpy(
+                        if (retval[0] = util::GRError(cudaMemcpy(
                                   data_slice->out_length,
                                   data_slice->d_out_length,
                                   sizeof(SizeT)*num_gpus,
                                   cudaMemcpyDeviceToHost),
                                   "BFSEnactor cudaMemcpy h_Length failed", __FILE__, __LINE__)) break;
-                    queue_index++;
-                    selector ^= 1;
-                    
-                    //Move data
-                    for (int peer=0;peer<num_gpus;peer++)
-                    {
-                        int peer_ = peer<gpu? peer+1: peer;
-                        int gpu_  = peer<gpu? gpu   : gpu+1;
-                        if (peer==gpu) continue;
-                        problem->data_slices[peer]->in_length[gpu_]=data_slice->out_length[peer_];
-                        if (retval [0] = util::GRError(cudaMemcpyPeer(
-                                  &(problem->data_slices[peer]->d_keys_in[problem->graph_slices[peer]->in_offset[gpu_]]),
-                                  gpu_idx[peer], 
-                                  &(graph_slice->frontier_queues.d_keys[graph_slice->out_offset[peer_]]),
-                                  gpu_idx[gpu],
-                                  sizeof(VertexId) * data_slice->out_length[peer_]),
-                                  "cudaMemcpyPeer d_keys failed", __FILE__, __LINE__)) break;
+                        out_offset[0]=0;
+                        for (int i=0;i<num_gpus;i++) out_offset[i+1]=out_offset[i]+data_slice->out_length[i];
+ 
+                        queue_index++;
+                        selector ^= 1;
+                        util::cpu_mt::PrintMessage("multi_scan returned.", gpu, iteration[0]);
+                        util::cpu_mt::PrintGPUArray<SizeT,VertexId>("4d_keys     ",graph_slice->frontier_queues.d_keys[selector], n, gpu, iteration[0]);
+                        util::cpu_mt::PrintGPUArray<SizeT,VertexId>("4d_associate",data_slice->h_associate_out[0], out_offset[num_gpus]-out_offset[1],gpu,iteration[0]);
+                        if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray<SizeT,VertexId>("4d_associate",data_slice->h_associate_out[1], out_offset[num_gpus]-out_offset[1],gpu,iteration[0]);
+                        util::cpu_mt::PrintCPUArray<SizeT,VertexId>("4out_length ",data_slice->out_length, num_gpus, gpu,iteration[0]);
+                        util::cpu_mt::PrintCPUArray<SizeT,VertexId>("4out_offset ",out_offset, num_gpus+1, gpu, iteration[0]);
+                        
+                        if (iteration[0]!=0)
+                        {  //CPU global barrier
+                            sprintf(message,"cpu_barrier1 wait releaseCount=%d count=%d reseted=%d waken=%d", cpu_barrier[1].releaseCount, cpu_barrier[1].count, cpu_barrier[1].reseted? 0:1, cpu_barrier[1].waken);
+                            util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                            util::cpu_mt::IncrementnWaitBarrier(&(cpu_barrier[1]),gpu);
+                            //if (!util::cpu_mt::IncrementBarriernReset(cpu_barrier))
+                            //{
+                            //    cutWaitForBarrier  (cpu_barrier);
+                            //}
+                            sprintf(message,"cpu_barrier1 past releaseCount=%d count=%d reseted=%d waken=%d", gpu, cpu_barrier[1].releaseCount, cpu_barrier[1].count, cpu_barrier[1].reseted? 0:1, cpu_barrier[1].waken);
+                            util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                        }
 
-                        for (int i=0;i<data_slice->num_associate;i++)
+                        //Move data
+                        for (int peer=0;peer<num_gpus;peer++)
                         {
-                            if (retval [0] = util::GRError(cudaMemcpyPeer(
-                                  &(problem->data_slices[peer]->d_associate_in[i][problem->graph_slices[peer]->in_offset[gpu_]]),
-                                  gpu_idx[peer],
-                                  &(data_slice->d_associate_out[i][graph_slice->out_offset[peer_]-graph_slice->out_offset[0]]),
-                                  gpu_idx[gpu],
-                                  sizeof(VertexId) * data_slice->out_length[peer_]),
-                                  "cudaMemcpyPeer associate_out failed", __FILE__, __LINE__)) break;
+                            int peer_ = peer<gpu? peer+1: peer;
+                            int gpu_  = peer<gpu? gpu   : gpu+1;
+                            if (peer==gpu) continue;
+                            problem->data_slices[peer]->in_length[gpu_]=data_slice->out_length[peer_];
+                            if (data_slice->out_length[peer_] == 0) continue;
+                            //printf("%d: peer = %d out_length = %d in_offset = %d, out_offset = %d\n", gpu, peer, data_slice->out_length[peer_], problem->graph_slices[peer]->in_offset[gpu_], out_offset[peer_]);
+                            if (retval [0] = util::GRError(cudaMemcpy(
+                                  problem->data_slices[peer]->d_keys_in + problem->graph_slices[peer]->in_offset[gpu_],
+                                  //gpu_idx[peer], 
+                                  graph_slice->frontier_queues.d_keys[selector] + out_offset[peer_],
+                                  //gpu_idx[gpu],
+                                  sizeof(VertexId) * data_slice->out_length[peer_], cudaMemcpyDefault),
+                                  "cudaMemcpyPeer d_keys failed", __FILE__, __LINE__)) break;
+                            //printf("%d: d_keys_out -> d_keys_in finished.\n", gpu);fflush(stdout);
+                            for (int i=0;i<data_slice->num_associate;i++)
+                            {
+                                //printf("%d: peer = %d associate = %d in_offset = %d out_offset = %d length = %d\n", gpu, peer, i, problem->graph_slices[peer]->in_offset[gpu_], out_offset[peer_] - out_offset[1], data_slice->out_length[peer_]); fflush(stdout);
+                                if (retval [0] = util::GRError(cudaMemcpy(
+                                    problem->data_slices[peer]->h_associate_in[i] + problem->graph_slices[peer]->in_offset[gpu_],
+                                    //gpu_idx[peer],
+                                    data_slice->h_associate_out[i] + (out_offset[peer_] - out_offset[1]),
+                                    //gpu_idx[gpu],
+                                    sizeof(VertexId) * data_slice->out_length[peer_], cudaMemcpyDefault),
+                                    "cudaMemcpyPeer associate_out failed", __FILE__, __LINE__)) break;
+                            }
+                            if (retval [0]) break;
                         }
                         if (retval [0]) break;
+                        util::cpu_mt::PrintMessage("data movement finished.",gpu,iteration[0]);
+                    }  else {
+                        util::cpu_mt::PrintMessage("multi_scan and data movement skipped.",gpu,iteration[0]);
+                        if (iteration[0]!=0)
+                        {  //CPU global barrier
+                            sprintf(message,"cpu_barrier1 wait releaseCount=%d count=%d reseted=%d waken=%d", cpu_barrier[1].releaseCount, cpu_barrier[1].count, cpu_barrier[1].reseted? 0:1, cpu_barrier[1].waken);
+                            util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                            util::cpu_mt::IncrementnWaitBarrier(&(cpu_barrier[1]),gpu);
+                            //if (!util::cpu_mt::IncrementBarriernReset(cpu_barrier))
+                            //{
+                            //    cutWaitForBarrier  (cpu_barrier);
+                            //}
+                            sprintf(message,"cpu_barrier1 past releaseCount=%d count=%d reseted=%d waken=%d", cpu_barrier[1].releaseCount, cpu_barrier[1].count, cpu_barrier[1].reseted? 0:1, cpu_barrier[1].waken);
+                            util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                        }
+
+                        for (int peer=0;peer<num_gpus;peer++)
+                        {
+                            int gpu_ = peer<gpu? gpu : gpu+1;
+                            problem->data_slices[peer]->in_length[gpu_]=0;
+                        }
                     }
-                    if (retval [0]) break;
 
                     //CPU global barrier
-                    cutIncrementBarrier(cpu_barrier);
-                    cutWaitForBarrier  (cpu_barrier);
+                    sprintf(message,"cpu_barrier0 wait releaseCount=%d count=%d reseted=%d waken=%d", cpu_barrier[0].releaseCount, cpu_barrier[0].count, cpu_barrier[0].reseted? 0:1, cpu_barrier[0].waken);
+                    util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                    util::cpu_mt::IncrementnWaitBarrier(cpu_barrier,gpu);
+                    //if (!util::cpu_mt::IncrementBarriernReset(cpu_barrier))
+                    //{
+                    //    cutWaitForBarrier  (cpu_barrier);
+                    //}
+                    sprintf(message,"cpu_barrier0 past releaseCount=%d count=%d reseted=%d waken=%d", cpu_barrier[0].releaseCount, cpu_barrier[0].count, cpu_barrier[0].reseted? 0:1, cpu_barrier[0].waken);
+                    util::cpu_mt::PrintMessage(message,gpu,iteration[0]);
+                    //printf("%d: cpu_barrier past.\n", gpu); fflush(stdout);
+                    /*printf("%d: wai_barrier releaseCount=%d count=%d\n", gpu, cpu_barrier->releaseCount, cpu_barrier->count);fflush(stdout);
                     if (thread_num ==0)
                     {
                         cutDestroyBarrier(cpu_barrier);
                         cpu_barrier[0]=cutCreateBarrier(num_gpus);
                     }
-
+                    printf("%d: set_barrier releaseCount=%d count=%d\n", gpu, cpu_barrier->releaseCount, cpu_barrier->count);fflush(stdout);
+                    */
                     //Expand received data
+                    util::cpu_mt::PrintCPUArray<SizeT,SizeT   >("5in_length  ", data_slice->in_length, num_gpus,gpu,iteration[0]);
+                    util::cpu_mt::PrintCPUArray<SizeT,SizeT   >("5in_offset  ", graph_slice->in_offset, num_gpus, gpu,iteration[0]);
+                    util::cpu_mt::PrintGPUArray<SizeT,VertexId>("5d_keys_in  ", data_slice->d_keys_in, data_slice->in_length[1],gpu,iteration[0]);
+                    util::cpu_mt::PrintGPUArray<SizeT,VertexId>("5d_asso_in0 ", data_slice->h_associate_in[0], data_slice->in_length[1],gpu,iteration[0]);
+                    if (data_slice->d_preds!=NULL) util::cpu_mt::PrintGPUArray<SizeT,VertexId>("5d_asso_in1 ", data_slice->h_associate_in[1], data_slice->in_length[1],gpu,iteration[0]);
+                    SizeT total_length=data_slice->out_length[0];
                     for (int peer=0;peer<num_gpus;peer++)
                     {
                         if (peer==gpu) continue;
@@ -350,7 +501,7 @@ namespace bfs {
                             data_slice  ->num_associate,
                             graph_slice ->in_offset[peer_],
                             data_slice  ->d_keys_in,
-                            &(graph_slice->frontier_queues.d_keys[selector][data_slice->out_length[0]]),
+                            graph_slice->frontier_queues.d_keys[selector]+data_slice->out_length[0],
                             data_slice  ->d_associate_in,
                             data_slice  ->d_associate_org);
                         if (retval[0] = util::GRError("Expand_Incoming failed", __FILE__, __LINE__)) break;
@@ -359,15 +510,16 @@ namespace bfs {
                         //            &(data_slice->d_keys_in[graph_slice->in_offset[tgpu_foreign]]),
                         //            sizeof() * data_slice->in_length[tgpu_foreign], cudaMemcpyDeviceToDevice),
                         //            "cudaMemcpy d_keys_in failed", __FILE__, __LINE__)) break;
-                        data_slice->out_length[0]+=data_slice->in_length[peer_];
+                        total_length+=data_slice->in_length[peer_];
                     }
                     if (retval [0]) break;
-                    if (retval[0] = work_progress->SetQueueLength(queue_index,data_slice->out_length[0])) break;
+                    if (retval[0] = work_progress->SetQueueLength(queue_index,total_length)) break;
                 }
-                printf("gpu = %d iteration = %d finish.\n", gpu, iteration[0]);fflush(stdout);
+                util::cpu_mt::PrintMessage("iteration finish.", gpu, iteration[0]);
+                iteration[0]++;
             }
 
-            delete[] h_cur_queue;
+            delete[] h_cur_queue;h_cur_queue=NULL;
 
             // Check if any of the frontiers overflowed due to redundant expansion
             bool overflowed = false;
@@ -378,6 +530,12 @@ namespace bfs {
             }
         } while(0);
 
+        if (num_gpus >1)
+        {
+            delete Scaner; Scaner=NULL;
+            delete[] out_offset; out_offset=NULL;
+        }
+        delete[] message;message=NULL;
         printf("BFSThread end.\n"); fflush(stdout);
         CUT_THREADEND; 
     }
@@ -441,9 +599,9 @@ public:
         typedef typename ProblemData::VertexId      VertexId;
         
         cudaError_t retval = cudaSuccess;
-        num_gpus = problem->num_gpus;
-        gpu_idx  = problem->gpu_idx;
-
+        this->num_gpus = problem->num_gpus;
+        this->gpu_idx  = problem->gpu_idx;
+        printf("-1: num_gpus = %d, this->num_gpus = %d\n", num_gpus, this->num_gpus);fflush(stdout);
         do {
             dones           = new volatile int*      [num_gpus];
             d_dones         = new          int*      [num_gpus];
@@ -575,6 +733,7 @@ public:
             delete[] work_progress;  work_progress   = NULL; printf("work_progress deleted.\n"  ); fflush(stdout);
             delete[]   edge_map_kernel_stats;  edge_map_kernel_stats = NULL; printf("edge_map_kernel_stats deleted.\n"); fflush(stdout);
             delete[] vertex_map_kernel_stats;vertex_map_kernel_stats = NULL; printf("vertex_map_kernel_stats deleted.\n"); fflush(stdout);
+            gpu_idx = NULL;
         }
         printf("~BFSEnactor end.\n"); fflush(stdout);
     }
@@ -641,15 +800,12 @@ public:
     typename BFSProblem::VertexId       src,
     int                                 max_grid_size = 0)
     {
+        util::cpu_mt::CPUBarrier cpu_barrier[2];
+        ThreadSlice *thread_slices;
+        CUTThread   *thread_Ids;
         printf("EnactBFS begin.\n"); fflush(stdout);
 
         cudaError_t retval = cudaSuccess;
-        struct ThreadSlice <INSTRUMENT, EdgeMapPolicy, VertexMapPolicy, BFSProblem> *thread_slices
-               = new ThreadSlice <INSTRUMENT, EdgeMapPolicy, VertexMapPolicy, BFSProblem> [num_gpus];
-        CUTThread*   thread_Ids  = new CUTThread[num_gpus];
-        CUTBarrier*  cpu_barrier = new CUTBarrier[1];
-        cpu_barrier[0] = cutCreateBarrier(num_gpus);
-
         printf("EnactBFS start.\n"); fflush(stdout);
 
         do {
@@ -670,17 +826,28 @@ public:
             }
 
             // Lazy initialization
-            if (retval = Setup(problem, edge_map_grid_size, vertex_map_grid_size)) break;
-            
+            if (retval = Setup<BFSProblem>(problem, edge_map_grid_size, vertex_map_grid_size)) break;
+            thread_slices  
+        //       = malloc (sizeof(ThreadSlice <INSTRUMENT, BFSProblem>)* num_gpus);
+                 = new ThreadSlice [num_gpus];
+            thread_Ids  = new CUTThread[num_gpus];
+            //CUTBarrier  cpu_barrier[1];// = new CUTBarrier[1];
+        
+            cpu_barrier[0] = util::cpu_mt::CreateBarrier(num_gpus);
+            cpu_barrier[1] = util::cpu_mt::CreateBarrier(num_gpus);
+            printf("%d: num_gpus = %d\n", -1, num_gpus);
+            printf("%d: cpu_barrier releaseCount=%d count=%d\n", -1, cpu_barrier->releaseCount, cpu_barrier->count);
+            //for (int gpu=0;gpu<num_gpus;gpu++) thread_slices[gpu]=NULL;
             // Dummy call to the BFSThread function that will never be called, to force compile of the BFSThread
             //if (num_gpus < 0) BFSThread<INSTRUMENT,EdgeMapPolicy, VertexMapPolicy, BFSProblem> (&thread_slices[0]);
 
             printf("EnactBFS multithread begin.\n"); fflush(stdout);
             for (int gpu=0;gpu<num_gpus;gpu++)
             {
+                //thread_slices[gpu] = (ThreadSlice*) malloc(sizeof(ThreadSlice));//new ThreadSlice;
                 thread_slices[gpu].thread_num           = gpu;
-                thread_slices[gpu].problem              = problem;
-                thread_slices[gpu].enactor              = this;
+                thread_slices[gpu].problem              = (void*)problem;
+                thread_slices[gpu].enactor              = (void*)this;
                 thread_slices[gpu].cpu_barrier          = cpu_barrier;
                 thread_slices[gpu].max_grid_size        = max_grid_size;
                 thread_slices[gpu].edge_map_grid_size   = edge_map_grid_size;
@@ -691,17 +858,19 @@ public:
                 printf("EnactBFS thread %d begin.\n", gpu); fflush(stdout);
                 //pthread_t thread;
                 //printf("pthread_create= %d\n", pthread_create(&thread, NULL, &(BFSThread<INSTRUMENT, EdgeMapPolicy, VertexMapPolicy, BFSProblem>), &thread_slices[gpu]));
-                thread_slices[gpu].thread_Id = cutStartThread((CUT_THREADROUTINE)&(BFSThread<INSTRUMENT,EdgeMapPolicy, VertexMapPolicy, BFSProblem>),(void*)(&(thread_slices[gpu])));
+                thread_slices[gpu].thread_Id = cutStartThread((CUT_THREADROUTINE)&(BFSThread<INSTRUMENT,EdgeMapPolicy, VertexMapPolicy, BFSProblem>),(void*)&(thread_slices[gpu]));
                 //BFSThread<INSTRUMENT,EdgeMapPolicy,VertexMapPolicy, BFSProblem> (&(thread_slices[gpu]));
                 printf("EnactBFS thread %d running.\n", gpu); fflush(stdout);
                 //thread_slices[gpu].thread_Id=thread;
                 thread_Ids[gpu]=thread_slices[gpu].thread_Id;
+                if (gpu!=num_gpus-1) util::cpu_mt::sleep_millisecs(1000);
             }
 
             cutWaitForThreads(thread_Ids,num_gpus);
             printf("BFSThreads finished.\n"); fflush(stdout);
-            cutDestroyBarrier(cpu_barrier);
-            delete[] cpu_barrier;cpu_barrier=NULL;
+            util::cpu_mt::DestoryBarrier(cpu_barrier);
+            util::cpu_mt::DestoryBarrier(cpu_barrier+1);
+            //delete[] cpu_barrier;cpu_barrier=NULL;
 
             for (int gpu=0;gpu<num_gpus;gpu++)
             if (this->retvals[gpu]!=cudaSuccess) {retval=this->retvals[gpu];break;}
@@ -713,10 +882,12 @@ public:
             thread_slices[gpu].problem = NULL;
             thread_slices[gpu].enactor = NULL;
             thread_slices[gpu].cpu_barrier = NULL;
+            //free( thread_slices[gpu]); thread_slices[gpu]=NULL;
         }
-        printf("..\n");fflush(stdout);
-        //delete[] thread_Ids;   thread_Ids    = NULL; printf("thread_Ids freed.\n"); fflush(stdout);
-        //delete[] thread_slices;thread_slices = NULL; printf("thread_slices freed.\n"); fflush(stdout);
+        //delete[] thread_slices; thread_slices=NULL;
+        //printf("..\n");fflush(stdout);
+        delete[] thread_Ids;   thread_Ids    = NULL; printf("thread_Ids freed.\n"); fflush(stdout);
+        delete[] thread_slices;thread_slices = NULL; printf("thread_slices freed.\n"); fflush(stdout);
         printf("BFSEnact finished.\n"); fflush(stdout);
         return retval;
     }

@@ -87,7 +87,7 @@ struct ProblemBase
         VertexId        *d_convertion_table;        // 
         int             *d_partition_table;         //
         SizeT           *d_in_offset;               //
-        SizeT           *d_out_offset;              //
+        //SizeT           *d_out_offset;              //
 
         //Frontier queues. Used to track working frontier.
         util::DoubleBuffer<VertexId, VertexId>      frontier_queues;
@@ -126,7 +126,7 @@ struct ProblemBase
             d_convertion_table = NULL;
             d_partition_table  = NULL;
             d_in_offset        = NULL;
-            d_out_offset       = NULL;
+            //d_out_offset       = NULL;
             nodes              = 0;
             edges              = 0;
             this->stream       = stream;
@@ -160,8 +160,8 @@ struct ProblemBase
                                         "GpuSlice cudaFree d_partition_table failed" , __FILE__, __LINE__); printf("5"); fflush(stdout);
             if (d_in_offset       ) util::GRError(cudaFree(d_in_offset       ),
                                         "GpuSlice cudaFree d_in_offset failed"       , __FILE__, __LINE__); printf("6"); fflush(stdout);
-            if (d_out_offset      ) util::GRError(cudaFree(d_out_offset      ),
-                                        "GpuSlice cudaFree d_out_offset failed"      , __FILE__, __LINE__); printf("7"); fflush(stdout);
+            //if (d_out_offset      ) util::GRError(cudaFree(d_out_offset      ),
+            //                            "GpuSlice cudaFree d_out_offset failed"      , __FILE__, __LINE__); printf("7"); fflush(stdout);
 
             for (int i = 0; i < 2; ++i) {
                 printf(" %d,%d ",i,frontier_elements[i]); fflush(stdout);
@@ -187,6 +187,7 @@ struct ProblemBase
             SizeT*                     in_offset,
             SizeT*                     out_offset)
         {
+            printf("GPUSlice Init begin. \n"); fflush(stdout);
             cudaError_t retval     = cudaSuccess;
             this->graph            = graph;
             nodes                  = graph->nodes;
@@ -198,6 +199,7 @@ struct ProblemBase
 
             do {
                 if (retval = util::GRError(cudaSetDevice(index), "GpuSlice cudaSetDevice failed", __FILE__, __LINE__)) break;
+                //printf("1");fflush(stdout);
                 if (stream_from_host) {
                     if (retval = util::GRError(cudaHostGetDevicePointer(
                                     (void **)&(d_row_offsets),
@@ -235,6 +237,7 @@ struct ProblemBase
                         "GraphSlice cudaMemcpy d_column_indices failed", __FILE__, __LINE__)) break;
                 } //end if (stream_from_host)
 
+                printf("2");fflush(stdout);
                 if (num_gpus >1)
                 {
                     // Allocate and initalize d_convertion_table
@@ -242,6 +245,7 @@ struct ProblemBase
                         (void**)&(d_partition_table),
                         nodes * sizeof(VertexId)),
                         "GraphSlice cudaMalloc d_partition_table failed", __FILE__, __LINE__)) break;
+                    printf("3");fflush(stdout);
 
                     if (retval = util::GRError(cudaMemcpy(
                         d_partition_table,
@@ -249,12 +253,14 @@ struct ProblemBase
                         nodes * sizeof(VertexId),
                         cudaMemcpyHostToDevice),
                         "GraphSlice cudaMemcpy d_partition_table failed", __FILE__, __LINE__)) break;
+                    printf("4");fflush(stdout);
 
                     // Allocate and initalize d_convertion_table
                     if (retval = util::GRError(cudaMalloc(
                         (void**)&(d_convertion_table),
                         nodes * sizeof(VertexId)),
                         "GraphSlice cudaMalloc d_convertion_table failed", __FILE__, __LINE__)) break;
+                    printf("5");fflush(stdout);
 
                     if (retval = util::GRError(cudaMemcpy(
                         d_convertion_table,
@@ -262,12 +268,14 @@ struct ProblemBase
                         nodes * sizeof(VertexId),
                         cudaMemcpyHostToDevice),
                         "GraphSlice cudaMemcpy d_convertion_table failed", __FILE__, __LINE__)) break;
-  
+                    printf("6");fflush(stdout);  
+
                     // Allocate and initalize d_in_offset
                     if (retval = util::GRError(cudaMalloc(
                         (void**)&(d_in_offset),
                         num_gpus * sizeof(SizeT)),
                         "GraphSlice cudaMalloc d_in_offset failed", __FILE__, __LINE__)) break;
+                    printf("7"); fflush(stdout);
 
                     if (retval = util::GRError(cudaMemcpy(
                         d_in_offset,
@@ -275,12 +283,14 @@ struct ProblemBase
                         num_gpus * sizeof(SizeT),
                         cudaMemcpyHostToDevice),
                         "GraphSlice cudaMemcpy d_in_offset failed", __FILE__, __LINE__)) break;
+                    printf("8");fflush(stdout);
 
                     // Allocate and initalize d_out_offset
-                    if (retval = util::GRError(cudaMalloc(
+                    /*if (retval = util::GRError(cudaMalloc(
                         (void**)&(d_out_offset),
                         num_gpus * sizeof(SizeT)),
                         "GraphSlice cudaMalloc d_out_offset failed", __FILE__, __LINE__)) break;
+                    printf("9"); fflush(stdout);
 
                     if (retval = util::GRError(cudaMemcpy(
                         d_out_offset,
@@ -288,8 +298,10 @@ struct ProblemBase
                         num_gpus * sizeof(SizeT),
                         cudaMemcpyHostToDevice),
                         "GraphSlice cudaMemcpy d_out_offset failed", __FILE__, __LINE__)) break;
+                    printf("A"); fflush(stdout);*/
                } // end if num_gpu>1
             } while (0);
+            printf("GPUSlice Init finished.\n"); fflush(stdout);
             return retval;
         }
      
@@ -438,8 +450,10 @@ public:
             if (num_gpus > 1)
             {
                 //delete   sub_graphs       [i  ]; sub_graphs       [i  ] = NULL;
-                delete[] partition_tables [i+1]; partition_tables [i+1] = NULL;
-                delete[] convertion_tables[i+1]; convertion_tables[i+1] = NULL;
+                //delete[] partition_tables [i+1]; partition_tables [i+1] = NULL;
+                free (partition_tables    [i+1]); partition_tables [i+1] = NULL;
+                //delete[] convertion_tables[i+1]; convertion_tables[i+1] = NULL;
+                free (convertion_tables   [i+1]); convertion_tables[i+1] = NULL;
                 delete[] out_offsets      [i  ]; out_offsets      [i  ] = NULL;
                 delete[] in_offsets       [i  ]; in_offsets       [i  ] = NULL;
             }
@@ -450,7 +464,7 @@ public:
             delete[] convertion_tables[0];  convertion_tables[0] = NULL;
             delete[] partition_tables;      partition_tables     = NULL;
             delete[] convertion_tables;     convertion_tables    = NULL;
-            delete[] graph_slices;          graph_slices         = NULL;
+            //delete[] graph_slices;          graph_slices         = NULL;
             delete[] out_offsets;           out_offsets          = NULL;
             delete[] in_offsets;            in_offsets           = NULL;
             delete   partitioner;           partitioner          = NULL;
@@ -530,6 +544,7 @@ public:
         //SizeT*      &convertion_table)
         )
     {
+        printf("ProblemBase Init begin.\n"); fflush(stdout);
         cudaError_t retval      = cudaSuccess;
         this->nodes             = graph.nodes;
         this->edges             = graph.edges;
@@ -544,7 +559,9 @@ public:
                 for (int gpu=0;gpu<num_gpus;gpu++)
                     this->gpu_idx[gpu]=gpu_idx[gpu];
             }
+            //printf("."); fflush(stdout);
             graph_slices  = new GraphSlice*[num_gpus];
+            printf("graph_slices created.\n"); fflush(stdout);
             //if (num_gpus <= 1) {
                 //SizeT    *h_row_offsets    = graph.row_offsets;
                 //VertexId *h_column_indices = graph.column_indices;
@@ -603,12 +620,29 @@ public:
                 {
                     if (partition_method=="random") 
                         partitioner=new rp::RandomPartitioner<VertexId, SizeT, Value>(graph,num_gpus);
-                    partitioner->Partition(
+                    else util::GRError("partition_method invalid", __FILE__,__LINE__);
+                    printf("partitioner created.\n");fflush(stdout);
+                    retval = partitioner->Partition(
                         sub_graphs,
                         partition_tables,
                         convertion_tables,
                         in_offsets,
                         out_offsets);
+                    printf("partitioner returned.\n");fflush(stdout);
+                    graph.DisplayGraph("original graph");
+                    util::cpu_mt::PrintCPUArray<SizeT,int  >("partition_table ", partition_tables [0], graph.nodes);
+                    util::cpu_mt::PrintCPUArray<SizeT,Value>("convertion_table", convertion_tables[0], graph.nodes);
+                    for (int gpu=0;gpu<num_gpus;gpu++)
+                    {
+                        char name[128];
+                        sprintf(name,"sub_graphs[%d]",gpu);
+                        sub_graphs[gpu].DisplayGraph(name);
+                        util::cpu_mt::PrintCPUArray<SizeT,int  >("partition_table ", partition_tables [gpu+1], sub_graphs[gpu].nodes);
+                        util::cpu_mt::PrintCPUArray<SizeT,Value>("convertion_table", convertion_tables[gpu+1], sub_graphs[gpu].nodes);
+                        util::cpu_mt::PrintCPUArray<SizeT,SizeT>("in_offsets      ", in_offsets       [gpu  ], num_gpus+1);
+                        util::cpu_mt::PrintCPUArray<SizeT,SizeT>("out_offsets     ", out_offsets      [gpu  ], num_gpus+1);
+                    }
+                    if (retval) break;
                 } else {
                     sub_graphs=&graph;
                 }
@@ -621,7 +655,13 @@ public:
                 {
                     printf("gpu_idx[%d] = %d\n", gpu, this->gpu_idx[gpu]); fflush(stdout);
                     graph_slices[gpu] = new GraphSlice(this->gpu_idx[gpu], 0);
+                    printf("graph_slice[%d] created.\n", gpu); fflush(stdout);
                     if (num_gpus > 1)
+                    {
+                        printf("partition_tables [%d] = %p,%d\n",gpu+1,partition_tables [gpu+1],partition_tables [gpu+1][0]);fflush(stdout);
+                        printf("convertion_tables[%d] = %p,%d\n",gpu+1,convertion_tables[gpu+1],convertion_tables[gpu+1][0]);fflush(stdout);
+                        printf("in_offsets       [%d] = %p,%d\n",gpu  ,in_offsets       [gpu  ],in_offsets       [gpu  ][0]);fflush(stdout);
+                        printf("out_offsets      [%d] = %p,%d\n",gpu  ,out_offsets      [gpu  ],out_offsets      [gpu  ][0]);fflush(stdout);
                         retval = graph_slices[gpu]->Init(
                             stream_from_host,
                             num_gpus,
@@ -630,7 +670,7 @@ public:
                             convertion_tables[gpu+1],
                             in_offsets[gpu],
                             out_offsets[gpu]);
-                    else retval = graph_slices[gpu]->Init(
+                    } else retval = graph_slices[gpu]->Init(
                             stream_from_host,
                             num_gpus,
                             &(sub_graphs[gpu]),

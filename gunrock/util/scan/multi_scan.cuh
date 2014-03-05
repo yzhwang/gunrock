@@ -108,38 +108,7 @@ struct MultiScan
 
             if (x/blockDim.x/2 < N_Next) ScanLoop<_SizeT,Block_N>(s_Buffer,Sum,y*N_Next + x/blockDim.x/2);
             else ScanLoop<_SizeT,Block_N>(s_Buffer,Sum,-1);
-
-            /*_SizeT Step=1;
-            #pragma unrool
-            for (int i=0;i<Block_N;i++)
-            {
-                _SizeT k = threadIdx.x * Step * 2 + Step -1;
-                if (k+Step < blockDim.x*2) s_Buffer[k + Step] += s_Buffer[k];
-                Step *= 2;
-                __syncthreads();
-            } // for i
-            if (threadIdx.x == blockDim.x -1)
-            {
-                if (x/blockDim.x/2 < N_Next) Sum[y*N_Next + x/blockDim.x/2] = s_Buffer[blockDim.x*2-1];
-                s_Buffer[blockDim.x*2-1]=0;
-            } // if
-            __syncthreads();
-
-            Step /= 2;
-            #pragma unrool
-            for (int i=Block_N-1;i>=0;i--)
-            {
-                _SizeT k = threadIdx.x * Step * 2 + Step -1;
-                if (k+Step < blockDim.x*2)
-                {
-                    _SizeT t = s_Buffer[k];
-                    s_Buffer[k] = s_Buffer[k+Step];
-                    s_Buffer[k+Step] += t;
-                }
-                Step /= 2;
-                __syncthreads();
-            } // for i*/
-            
+           
             if (y == Splict0) Buffer[x] = s_Buffer[threadIdx.x];
             if (y == Splict1) Buffer[x + blockDim.x] = s_Buffer[threadIdx.x + blockDim.x];
         } // for y
@@ -208,35 +177,6 @@ struct MultiScan
 
         ScanLoop<_SizeT,Block_N>(s_Buffer,Sum,y*gridDim.x+blockIdx.x);
 
-        /*_SizeT Step=1;
-        #pragma unrool
-        for (int i=0;i<Block_N;i++)
-        {
-            _SizeT k = threadIdx.x * Step*2 +Step-1;
-            if (k+Step < blockDim.x*2) s_Buffer[k+Step] += s_Buffer[k];
-            Step *= 2;
-            __syncthreads();
-        } // for i
-        if (threadIdx.x == blockDim.x-1)
-        {
-            Sum[y*gridDim.x+blockIdx.x] = s_Buffer[blockDim.x*2-1];
-            s_Buffer[blockDim.x*2-1] = 0;
-        }
-        __syncthreads();
-        
-        Step /= 2;
-        for (int i=Block_N-1; i>=0; i--)
-        {
-            _SizeT k = threadIdx.x * Step*2 + Step-1;
-            if (k+Step < blockDim.x*2)
-            {
-                _SizeT t = s_Buffer[k];
-                s_Buffer[k] = s_Buffer[k+Step];
-                s_Buffer[k+Step] += t;
-            }
-            Step /= 2;
-            __syncthreads();
-        } // for i*/
         if (x < N) Buffer[y*N+x] = s_Buffer[threadIdx.x];
         if (x+blockDim.x < N) Buffer[y*N+x+blockDim.x] = s_Buffer[threadIdx.x+blockDim.x];
     } // Step1
@@ -300,17 +240,18 @@ struct MultiScan
         _SizeT x = x_Next * blockDim.x + threadIdx.x;
 
         if (x>=N) return;
-        _VertexId key = Key[x];
+        _VertexId key     = Key[x];
         _SizeT    tOffset = Offset[1];
-        _SizeT      r = Buffer[x]+Offset[Splict[x]];
-        if (x_Next>0) r+=Sum[Splict[x]*N_Next+x_Next];
+        _SizeT    splict  = Splict[key];
+        _SizeT          r = Buffer[x] + Offset[splict];
+        if (x_Next>0) r+=Sum[splict*N_Next+x_Next];
         if (!EXCLUSIVE) r+=1;
         Result[r]=Convertion[key];
         
-        if (Splict[x]>0) 
+        if (splict>0) 
         for (int i=0;i<num_associate;i++)
         {
-            associate_out[i][r-tOffset]=associate_in[i][x];
+            associate_out[i][r-tOffset]=associate_in[i][key];
         }        
     }
 
@@ -477,16 +418,22 @@ struct MultiScan
               VertexId*        d_Result,
         const int*       const d_Splict,    // Spliction mark
         const VertexId*  const d_Convertion,
-        const SizeT*     const d_Offset,    // Offset of each sub-array
+        //const SizeT*     const d_Offset,    // Offset of each sub-array
               SizeT*           d_Length,    // Length of each sub-array
               VertexId**       d_Associate_in,
               VertexId**       d_Associate_out)    // The scan result
     {
+        //printf("Scan_width_Keys begin. Num_Elements = %d \n", Num_Elements);fflush(stdout);
+        if (Num_Elements <= 0) return;
         SizeT *History_Size = new SizeT[10];
         SizeT **d_Buffer    = new SizeT*[10];
         SizeT Current_Size  = Num_Elements;
         int   Current_Level = 0;
         dim3  Block_Size,Grid_Size;
+        SizeT *h_Offset1    = new SizeT[Num_Rows+1];
+        SizeT *d_Offset1;
+        
+        util::GRError(cudaMalloc((void**)&d_Offset1, sizeof(SizeT)*(Num_Rows+1)), "cudaMalloc d_Offset1 failed", __FILE__, __LINE__);
 
         for (int i=0;i<10;i++) d_Buffer[i]=NULL;
         d_Buffer[0]     = d_Result;
@@ -495,8 +442,10 @@ struct MultiScan
         if ((History_Size[0]%BLOCK_SIZE)!=0) History_Size[1]++;
         util::GRError(cudaMalloc(&(d_Buffer[1]), sizeof(SizeT) * History_Size[1] * Num_Rows),
               "cudaMalloc d_Buffer[1] failed", __FILE__, __LINE__);
+        //printf("Keys: "); Test_Array<SizeT, VertexId> (Num_Elements, 1, d_Keys);
+        //printf("Spli: "); Test_Array<SizeT, int     > (7,1,d_Splict);
 
-        while (Current_Size>1)
+        while (Current_Size>1 || Current_Level==0)
         {
             Block_Size = dim3(BLOCK_SIZE/2, 1, 1);
             if (Current_Level == 0)
@@ -514,6 +463,7 @@ struct MultiScan
                     d_Buffer[1]);
                 cudaDeviceSynchronize();
                 util::GRError("Step0b failed", __FILE__, __LINE__);
+                //printf("Level %d: \n", Current_Level);
                 //Test_Array<SizeT,SizeT>(History_Size[Current_Level  ],1       ,d_Buffer[Current_Level  ]);
                 //Test_Array<SizeT,SizeT>(History_Size[Current_Level+1],Num_Rows,d_Buffer[Current_Level+1]);
             } else {
@@ -525,6 +475,7 @@ struct MultiScan
                     d_Buffer[Current_Level+1]);
                 cudaDeviceSynchronize();
                 util::GRError("Step1 failed", __FILE__, __LINE__);
+                //printf("Level %d: \n", Current_Level);
                 //Test_Array<SizeT,SizeT>(History_Size[Current_Level  ],Num_Rows,d_Buffer[Current_Level  ]);
                 //Test_Array<SizeT,SizeT>(History_Size[Current_Level+1],Num_Rows,d_Buffer[Current_Level+1]);
             }
@@ -555,6 +506,7 @@ struct MultiScan
                 d_Buffer[Current_Level-1]);
             cudaDeviceSynchronize();
             util::GRError("Step2 failed", __FILE__, __LINE__);
+            //printf("Level %d: \n", Current_Level);
             //Test_Array<SizeT,SizeT>(History_Size[Current_Level  ],Num_Rows,d_Buffer[Current_Level  ]);
             //Test_Array<SizeT,SizeT>(History_Size[Current_Level-1],Num_Rows,d_Buffer[Current_Level-1]);
             Current_Level--;
@@ -562,7 +514,15 @@ struct MultiScan
 
         Block_Size = dim3(BLOCK_SIZE, 1, 1);
         Grid_Size  = dim3(History_Size[1] /32, 32, 1);
+        h_Offset1[0]=0;
+        util::GRError(cudaMemcpy(&(h_Offset1[1]), d_Length, sizeof(SizeT)*Num_Rows, cudaMemcpyDeviceToHost), 
+                     "cudaMemcpy h_Offset1 failed", __FILE__, __LINE__);
+        for (int i=0;i<Num_Rows;i++) h_Offset1[i+1]+=h_Offset1[i];
+        util::GRError(cudaMemcpy(d_Offset1, h_Offset1, sizeof(SizeT)*(Num_Rows+1), cudaMemcpyHostToDevice),
+                     "cudaMemcpy d_Offset1 failed", __FILE__, __LINE__);
+
         if ((History_Size[1]%32)!=0) Grid_Size.x++;
+        //printf("Block_Size = %d,%d,%d Grid_Size = %d,%d,%d\n", Block_Size.x, Block_Size.y, Block_Size.z, Grid_Size.x, Grid_Size.y, Grid_Size.z); fflush(stdout);
         Step3b <VertexId,SizeT,EXCLUSIVE> 
             <<<Grid_Size,Block_Size>>> (
             Num_Elements,
@@ -571,7 +531,7 @@ struct MultiScan
             d_Keys,
             d_Splict,
             d_Convertion,
-            d_Offset,
+            d_Offset1,
             d_Buffer[1],
             d_Buffer[0],
             d_Result,
@@ -579,8 +539,10 @@ struct MultiScan
             d_Associate_out);
         cudaDeviceSynchronize();
         util::GRError("Step3b failed", __FILE__, __LINE__);
+        //printf("Level %d: \n", Current_Level);
         //Test_Array<SizeT,SizeT>(History_Size[1],Num_Rows,d_Buffer[1]);
         //Test_Array<SizeT,SizeT>(Num_Elements,1,d_Result);
+        //printf("d_Offset: "); Test_Array<SizeT,SizeT>(Num_Rows+1,1,d_Offset);
 
         for (int i=1;i<10;i++) 
         if (d_Buffer[i]!=NULL) 
@@ -589,8 +551,11 @@ struct MultiScan
                   "cudaFree d_Buffer failed", __FILE__, __LINE__);
             d_Buffer[i]=NULL;
         }
-        delete[] d_Buffer;d_Buffer=NULL;
-        delete[] History_Size;History_Size=NULL;
+        util::GRError(cudaFree(d_Offset1),"cudaFree d_Offset1 failed", __FILE__, __LINE__); d_Offset1=NULL;
+        delete[] h_Offset1;    h_Offset1    = NULL;
+        delete[] d_Buffer;     d_Buffer     = NULL;
+        delete[] History_Size; History_Size = NULL;
+        //printf("Scan_width_keys ended. Num_Elements = %d\n", Num_Elements); fflush(stdout);
     } // Scan_with_Keys
 
 }; // struct MultiScan

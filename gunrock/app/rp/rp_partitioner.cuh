@@ -44,7 +44,17 @@ struct RandomPartitioner : PartitionerBase<VertexId,SizeT,Value>
                       int   num_gpus,
                       float *weitage = NULL)
     {
-        Init(graph,num_gpus);
+        Init2(graph,num_gpus,weitage);
+    }
+
+    void Init2(
+        const GraphT &graph,
+        int num_gpus,
+        float *weitage)
+    {
+        printf("Init2 begin.\n"); fflush(stdout);
+        this->Init(graph,num_gpus);
+        printf("Init returned.\n"); fflush(stdout);
         this->weitage=new float[num_gpus+1];
         if (weitage==NULL)
             for (int gpu=0;gpu<num_gpus;gpu++) this->weitage[gpu]=1.0f/num_gpus;
@@ -53,18 +63,21 @@ struct RandomPartitioner : PartitionerBase<VertexId,SizeT,Value>
             for (int gpu=0;gpu<num_gpus;gpu++) sum+=weitage[gpu];
             for (int gpu=0;gpu<num_gpus;gpu++) this->weitage[gpu]=weitage[gpu]/sum; 
         }
-        for (int gpu=0;gpu<num_gpus;gpu++) this->weitage[gpu+1]+=weitage[gpu];
+        for (int gpu=0;gpu<num_gpus;gpu++) this->weitage[gpu+1]+=this->weitage[gpu];
+        printf("Init2 end.\n"); fflush(stdout);
     }
 
     ~RandomPartitioner()
     {
+        printf("~RandomPartitioner begin\n");fflush(stdout);
         if (weitage!=NULL)
         {
             delete[] weitage;weitage=NULL;
         }
+        printf("~RandomPartitioner end\n"); fflush(stdout);
     }
 
-    template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
+    //template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
     cudaError_t Partition(
         GraphT*    &sub_graphs,
         int**      &partition_tables,
@@ -72,6 +85,8 @@ struct RandomPartitioner : PartitionerBase<VertexId,SizeT,Value>
         SizeT**    &in_offsets,
         SizeT**    &out_offsets)
     {
+        printf("Partition begin.\n");fflush(stdout);
+
         cudaError_t retval = cudaSuccess;
         int*        tpartition_table=this->partition_tables[0];
         srand(time(NULL));
@@ -87,14 +102,16 @@ struct RandomPartitioner : PartitionerBase<VertexId,SizeT,Value>
             }
             if (tpartition_table[node]==this->num_gpus) tpartition_table[node]=(rand() % this->num_gpus);
         }
-        retval = this->MakeSubGrasph
-                 <LOAD_EDGE_VALUES, LOAD_NODE_VALUES>
-                 (true );
+        retval = this->MakeSubGraph
+                 //<LOAD_EDGE_VALUES, LOAD_NODE_VALUES>
+                 ();
         sub_graphs        = this->sub_graphs;
         partition_tables  = this->partition_tables;
         convertion_tables = this->convertion_tables;
         in_offsets        = this->in_offsets;
         out_offsets       = this->out_offsets;
+        printf("%p, %p, %d\n", partition_tables, partition_tables[1], partition_tables[1][0]);fflush(stdout);
+        printf("Partition end.\n");fflush(stdout);
         return retval;
     }
 };

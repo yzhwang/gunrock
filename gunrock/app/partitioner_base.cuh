@@ -70,7 +70,8 @@ public:
     struct ThreadSlice
     {
     public:
-        GraphT     *graph,*sub_graph;
+        const GraphT     *graph;
+        GraphT     *sub_graph;
         int        thread_num,num_gpus;
         CUTBarrier *cpu_barrier;
         CUTThread  thread_Id;
@@ -96,9 +97,10 @@ public:
 
     virtual ~PartitionerBase()
     {
+        printf("~PartitionerBase begin\n");fflush(stdout);
         if (Status == 0) return;
         
-        for (int i=0; i< num_gpus; i++)
+        /*for (int i=0; i< num_gpus; i++)
         {
             delete[] partition_tables [i+1]; partition_tables [i+1] = NULL;
             delete[] convertion_tables[i+1]; convertion_tables[i+1] = NULL;
@@ -111,9 +113,10 @@ public:
         delete[] convertion_tables   ; convertion_tables    = NULL;
         delete[] in_offsets          ; in_offsets           = NULL;
         delete[] out_offsets         ; out_offsets          = NULL;
-        delete[] sub_graphs          ; sub_graphs           = NULL;
+        delete[] sub_graphs          ; sub_graphs           = NULL;*/
         Status   = 0;
         num_gpus = 0;
+        printf("~PartitionerBase end\n");fflush(stdout);
     } 
 
     cudaError_t Init(
@@ -150,10 +153,11 @@ public:
         return retval;
     }
     
-    template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
-    CUT_THREADPROC MakeSubGraph_Thread(ThreadSlice<VertexId,SizeT,Value> *thread_data)
+    //template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
+    static CUT_THREADPROC MakeSubGraph_Thread(void *thread_data_)
     {
-        GraphT*     graph             = thread_data->graph;
+        ThreadSlice<VertexId,SizeT,Value> *thread_data = (ThreadSlice<VertexId,SizeT,Value> *) thread_data_;
+        const GraphT* graph           = thread_data->graph;
         GraphT*     sub_graph         = thread_data->sub_graph;
         int         gpu               = thread_data->thread_num;
         CUTBarrier* cpu_barrier       = thread_data->cpu_barrier;
@@ -179,7 +183,7 @@ public:
             convertion_table0[node] = cross_counter[gpu];
             tconvertion_table[node] = cross_counter[gpu];
             marker[node] =1;
-            for (SizeT edge=graph->row_offset[node]; edge<graph->row_offset[node+1]; edge++)
+            for (SizeT edge=graph->row_offsets[node]; edge<graph->row_offsets[node+1]; edge++)
             {
                 SizeT neibor = graph->column_indices[edge];
                 int peer  = partition_table0[neibor];
@@ -196,6 +200,7 @@ public:
             num_edges+= graph->row_offsets[node+1] - graph->row_offsets[node];
         }
         delete[] marker;marker=NULL;
+        printf("%d: cross_counter = {%d, %d}\n", gpu, cross_counter[0], cross_counter[1]);
         out_offsets[gpu][0]=0;
         node_counter=cross_counter[gpu];
         for (int peer=0;peer<num_gpus;peer++)
@@ -206,9 +211,12 @@ public:
             node_counter+=cross_counter[peer];
         }
         out_offsets[gpu][num_gpus]=node_counter;
+        printf("%d: out_offsets = {%d,%d,%d}\n", gpu, out_offsets[gpu][0], out_offsets[gpu][1], out_offsets[gpu][2]); fflush(stdout);
         
+        printf("%d: cpu_barrier wait\n", gpu); fflush(stdout);
         cutIncrementBarrier(cpu_barrier);
         cutWaitForBarrier  (cpu_barrier);
+        printf("%d: cpu_barrier past\n", gpu); fflush(stdout);
         in_offsets[gpu][0]=0;
         node_counter=0;
         for (int peer=0;peer<num_gpus;peer++)
@@ -217,51 +225,62 @@ public:
             int peer_ = peer < gpu ? peer+1 : peer;
             int gpu_  = gpu  < peer? gpu +1 : gpu ; 
             in_offsets[gpu][peer_]=node_counter;
-            node_counter+=out_offsets[peer][gpu_]-out_offsets[peer][gpu_-1];
+            node_counter+=out_offsets[peer][gpu_+1]-out_offsets[peer][gpu_];
         }
         in_offsets[gpu][num_gpus]=node_counter;
-        sub_graph->FromScratch<LOAD_EDGE_VALUES, LOAD_NODE_VALUES>(num_nodes,num_edges);
-        if (convertion_table1[0] != NULL) delete[] convertion_table1[0];
-        if (partition_table1 [0] != NULL) delete[] partition_table1[0];
-        convertion_table1[0]=new VertexId[num_nodes];
-        partition_table1 [0]=new int     [num_nodes];
+        printf("%d: in_offsets = {%d,%d,%d}\n", gpu, in_offsets[gpu][0], in_offsets[gpu][1], in_offsets[gpu][2]); fflush(stdout);
+        
+        if      (graph->node_values == NULL && graph->edge_values == NULL) 
+             sub_graph->template FromScratch < false , false  >(num_nodes,num_edges);
+        else if (graph->node_values != NULL && graph->edge_values == NULL) 
+             sub_graph->template FromScratch < false , true   >(num_nodes,num_edges);
+        else if (graph->node_values == NULL && graph->edge_values != NULL) 
+             sub_graph->template FromScratch < true  , false  >(num_nodes,num_edges);
+        else sub_graph->template FromScratch < true  , true   >(num_nodes,num_edges);
+
+        if (convertion_table1[0] != NULL) free(convertion_table1[0]);
+        if (partition_table1 [0] != NULL) free(partition_table1[0]);
+        convertion_table1[0]= (VertexId*) malloc (sizeof(VertexId) * num_nodes);//new VertexId[num_nodes];
+        partition_table1 [0]= (int*) malloc (sizeof(int) * num_nodes);//new int     [num_nodes];
         edge_counter=0;
         for (SizeT node=0; node<graph->nodes; node++)
         if (partition_table0[node] == gpu)
         {
             VertexId node_ = tconvertion_table[node];
             sub_graph->row_offsets[node_]=edge_counter;
-            if (LOAD_NODE_VALUES) sub_graph->node_values[node_]=graph->node_values[node];
+            if (graph->node_values != NULL) sub_graph->node_values[node_]=graph->node_values[node];
             partition_table1 [0][node_] = 0;
             convertion_table1[0][node_] = node_;
-            for (SizeT edge=graph->row_offset[node]; edge<graph->row_offset[node+1]; edge++)
+            for (SizeT edge=graph->row_offsets[node]; edge<graph->row_offsets[node+1]; edge++)
             {
-                SizeT    neibor  = graph->column_indecies[edge];
+                SizeT    neibor  = graph->column_indices[edge];
                 int      peer    = partition_table0[neibor];
                 int      peer_   = peer < gpu ? peer+1 : peer;
                 if (peer == gpu) peer_ = 0;
                 VertexId neibor_ = tconvertion_table[neibor] + out_offsets[gpu][peer_];
                 
-                sub_graph->column_indecies[edge_counter] = neibor_;
-                if (LOAD_EDGE_VALUES) sub_graph->edge_values[edge_counter]=graph->edge_values[edge];
+                sub_graph->column_indices[edge_counter] = neibor_;
+                if (graph->edge_values !=NULL) sub_graph->edge_values[edge_counter]=graph->edge_values[edge];
                 if (peer != gpu)
                 {
-                    sub_graph->row_offset[neibor_]=num_edges;
+                    sub_graph->row_offsets[neibor_]=num_edges;
                     partition_table1 [0][neibor_] = peer_;
                     convertion_table1[0][neibor_] = convertion_table0[neibor];
                 }
                 edge_counter++;
             }   
         }
+        sub_graph->row_offsets[num_nodes]=num_edges;
 
         delete[] cross_counter;     cross_counter     = NULL;
         delete[] tconvertion_table; tconvertion_table = NULL;
         CUT_THREADEND;
     }
 
-    template <bool LOAD_EDGE_VALUES,bool LOAD_NODE_VALUES>
-    cudaError_t MakeSubGraph(bool dummy)
+    //template <bool LOAD_EDGE_VALUES,bool LOAD_NODE_VALUES>
+    cudaError_t MakeSubGraph()
     {
+        printf("MakeSubGraph begin.\n");fflush(stdout);
         cudaError_t retval = cudaSuccess;
         ThreadSlice<VertexId,SizeT,Value>* thread_data = new ThreadSlice<VertexId,SizeT,Value>[num_gpus];
         CUTThread*   thread_Ids  = new CUTThread  [num_gpus];
@@ -269,19 +288,20 @@ public:
 
         for (int gpu=0;gpu<num_gpus;gpu++)
         {
-            thread_data[gpu]->graph             = graph;
-            thread_data[gpu]->sub_graph         = &(sub_graphs[gpu]);
-            thread_data[gpu]->thread_num        = gpu;
-            thread_data[gpu]->cpu_barrier       = &cpu_barrier;
-            thread_data[gpu]->num_gpus          = num_gpus;
-            thread_data[gpu]->partition_table0  = partition_tables [0];
-            thread_data[gpu]->convertion_table0 = convertion_tables[0];
-            thread_data[gpu]->partition_table1  = &(partition_tables[gpu]);
-            thread_data[gpu]->convertion_table1 = &(convertion_tables[gpu]);
-            thread_data[gpu]->in_offsets        = in_offsets;
-            thread_data[gpu]->out_offsets       = out_offsets;
-            thread_data[gpu]->thread_Id         = cutStartThread((CUT_THREADROUTINE)MakeSubGraph_Thread<LOAD_EDGE_VALUES,LOAD_NODE_VALUES>, (void*)(&(thread_data[gpu])));
-            thread_Ids[gpu]=thread_data[gpu]->thread_Id;
+            thread_data[gpu].graph             = graph;
+            thread_data[gpu].sub_graph         = &(sub_graphs[gpu]);
+            thread_data[gpu].thread_num        = gpu;
+            thread_data[gpu].cpu_barrier       = &cpu_barrier;
+            thread_data[gpu].num_gpus          = num_gpus;
+            thread_data[gpu].partition_table0  = partition_tables [0];
+            thread_data[gpu].convertion_table0 = convertion_tables[0];
+            thread_data[gpu].partition_table1  = &(partition_tables[gpu+1]);
+            thread_data[gpu].convertion_table1 = &(convertion_tables[gpu+1]);
+            thread_data[gpu].in_offsets        = in_offsets;
+            thread_data[gpu].out_offsets       = out_offsets;
+            thread_data[gpu].thread_Id         = cutStartThread((CUT_THREADROUTINE)&(MakeSubGraph_Thread)//<LOAD_EDGE_VALUES,LOAD_NODE_VALUES>
+                    , (void*)(&(thread_data[gpu])));
+            thread_Ids[gpu]=thread_data[gpu].thread_Id;
         }
 
         cutWaitForThreads(thread_Ids,num_gpus);
@@ -289,6 +309,7 @@ public:
         delete[] thread_Ids ;thread_Ids =NULL;
         delete[] thread_data;thread_data=NULL;
         Status = 2;
+        printf("MakeSubGraph end.\n"); fflush(stdout);
         return retval;
     }
 
@@ -404,6 +425,7 @@ public:
         return Status;
     }*/
 
+    //template <bool LOAD_EDGE_VALUES, bool LOAD_NODE_VALUES>
     virtual cudaError_t Partition(
         GraphT*    &sub_graphs,
         int**      &partition_tables,
@@ -411,7 +433,8 @@ public:
         SizeT**    &in_offsets,
         SizeT**    &out_offsets)
     {
-        return cudaSuccess;
+        printf("PartitionBase:Partition called.\n"); fflush(stdout);
+        return util::GRError("PartitionBase::Partition is undefined", __FILE__, __LINE__);
     }
 };
 

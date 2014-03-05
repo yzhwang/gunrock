@@ -457,7 +457,13 @@ void RunTests(
     if (args.CheckCmdLineFlag("partition_method")) args.GetCmdLineArgument("partition_method",partition_method);
     if (args.CheckCmdLineFlag("device"))
     {
-        
+        std::vector<int> gpus;
+        args.GetCmdLineArguments<int>("device",gpus);
+        num_gpus   = gpus.size();
+        printf("Using %d gpus: ", num_gpus);
+        gpu_idx    = new int[num_gpus];
+        for (int i=0;i<num_gpus;i++) {gpu_idx[i]=gpus[i]; printf(" %d ", gpu_idx[i]);}
+        printf("\n"); fflush(stdout);
     } else {
         num_gpus   = 1;
         gpu_idx    = new int[1];
