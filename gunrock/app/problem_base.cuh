@@ -629,10 +629,10 @@ public:
                         in_offsets,
                         out_offsets);
                     printf("partitioner returned.\n");fflush(stdout);
-                    graph.DisplayGraph("original graph");
-                    util::cpu_mt::PrintCPUArray<SizeT,int  >("partition_table ", partition_tables [0], graph.nodes);
-                    util::cpu_mt::PrintCPUArray<SizeT,Value>("convertion_table", convertion_tables[0], graph.nodes);
-                    for (int gpu=0;gpu<num_gpus;gpu++)
+                    //graph.DisplayGraph("original graph");
+                    //util::cpu_mt::PrintCPUArray<SizeT,int  >("partition_table ", partition_tables [0], graph.nodes);
+                    //util::cpu_mt::PrintCPUArray<SizeT,Value>("convertion_table", convertion_tables[0], graph.nodes);
+                    /*for (int gpu=0;gpu<num_gpus;gpu++)
                     {
                         char name[128];
                         sprintf(name,"sub_graphs[%d]",gpu);
@@ -641,7 +641,7 @@ public:
                         util::cpu_mt::PrintCPUArray<SizeT,Value>("convertion_table", convertion_tables[gpu+1], sub_graphs[gpu].nodes);
                         util::cpu_mt::PrintCPUArray<SizeT,SizeT>("in_offsets      ", in_offsets       [gpu  ], num_gpus+1);
                         util::cpu_mt::PrintCPUArray<SizeT,SizeT>("out_offsets     ", out_offsets      [gpu  ], num_gpus+1);
-                    }
+                    }*/
                     if (retval) break;
                 } else {
                     sub_graphs=&graph;

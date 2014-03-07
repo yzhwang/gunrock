@@ -13,7 +13,7 @@
  */
 
 #pragma once
-
+#include <typeinfo>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -167,7 +167,7 @@ extern "C" {
         pthread_mutex_unlock(&barrier->mutex1);
 
         if (ExcEvent) {
-            printf("%d: full\n", thread_num);fflush(stdout);
+            //printf("%d: full\n", thread_num);fflush(stdout);
             pthread_mutex_lock(&barrier->mutex);
             pthread_cond_signal(&barrier->conditionVariable);
             pthread_mutex_unlock(&barrier->mutex);
@@ -185,14 +185,14 @@ extern "C" {
                 if (all_done) break;
                 usleep(10);
             }*/
-            printf("%d: past\n", thread_num); fflush(stdout);
+            //printf("%d: past\n", thread_num); fflush(stdout);
         } else {
-            printf("%d: waiting1\n", thread_num);fflush(stdout);
+            //printf("%d: waiting1\n", thread_num);fflush(stdout);
             pthread_mutex_lock(&barrier->mutex);
             //while (barrier->count !=0)
                 pthread_cond_wait(&barrier->conditionVariable, &barrier->mutex);
             pthread_mutex_unlock(&barrier->mutex);
-            printf("%d: waken\n", thread_num);fflush(stdout);
+            //printf("%d: waken\n", thread_num);fflush(stdout);
             /*pthread_mutex_lock(&barrier->mutex1);
             barrier->waken++;
             pthread_mutex_unlock(&barrier->mutex1);
@@ -206,7 +206,7 @@ extern "C" {
                 if (all_done) break;           
                 usleep(10);
             }*/
-            printf("%d: past\n", thread_num);fflush(stdout);
+            //printf("%d: past\n", thread_num);fflush(stdout);
         }
     }
 
@@ -228,6 +228,41 @@ extern "C" {
         fflush(stdout);
     }
 
+    /*template < typename T >
+    struct is_same
+    {
+          enum { value = true };
+          //typedef is_same<T,T> type;
+    };
+
+
+    template < typename T1, typename T2 >
+    struct is_same
+    {
+          enum { value = false }; // is_same represents a bool.
+          //typedef is_same<T1,T2> type; // to qualify as a metafunction.
+    };*/
+
+    template <typename _Value>
+    void PrintValue(char* buffer, _Value val, char* prebuffer = NULL)
+    {
+        if (prebuffer != NULL) sprintf(buffer,"%s", prebuffer);
+        else sprintf(buffer,"");
+        if      (typeid(_Value) == typeid(int   ) || typeid(_Value) == typeid(unsigned int  ) ||
+                 typeid(_Value) == typeid(short ) || typeid(_Value) == typeid(unsigned short ))
+            sprintf(buffer,"%s%d"  ,buffer,val);
+        else if (typeid(_Value) == typeid(long  ) || typeid(_Value) == typeid(unsigned long  ))
+            sprintf(buffer,"%s%ld" ,buffer,val);
+        else if (typeid(_Value) == typeid(long long) || typeid(_Value) == typeid(unsigned long long)) 
+            sprintf(buffer,"%s%lld", buffer, val);
+        else if (typeid(_Value) == typeid(float ))// || typeid(_Value) == typeid(unsigned float ))  
+            sprintf(buffer,"%s%f"  ,buffer,val);
+        else if (typeid(_Value) == typeid(double))// || typeid(_Value) == typeid(unsigned double))  
+            sprintf(buffer,"%s%lf" ,buffer,val);
+        else if (typeid(_Value) == typeid(bool  ))
+            sprintf(buffer,val?"%strue":"%sfalse",buffer);
+    }
+
     template <typename _SizeT, typename _Value>
     void PrintCPUArray(const char* const name, const _Value* const array, const _SizeT limit, const int gpu=-1, const int iteration=-1)
     {
@@ -238,7 +273,7 @@ extern "C" {
         for (_SizeT i=0;i<limit;i++) 
         {
             if (i!=0) sprintf(buffer,"%s, ",buffer);
-            sprintf(buffer,"%s%d",buffer,array[i]);
+            PrintValue(buffer,array[i],buffer);     
         }
         PrintMessage(buffer,gpu,iteration);
         delete []buffer;buffer=NULL;
