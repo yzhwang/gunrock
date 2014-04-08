@@ -302,52 +302,63 @@ class PSSSPEnactor : public EnactorBase
                 Scan<MgpuScanTypeInc>((int*)problem->data_slices[0]->d_scanned_edges, queue_length, (int)0, mgpu::plus<int>(),
 		(int*)0, (int*)0, (int*)problem->data_slices[0]->d_scanned_edges, context);
 
-		        /*//Test Scan
-		        int *t_scan = new int[10];
-		        for (int i = 0; i < 10; ++i) {
-		            t_scan[i] = 1;
-		        }
-		        int *d_t_scan;
-		        cudaMalloc((void**)&d_t_scan, sizeof(int)*10);
-                if (retval = util::GRError(cudaMemcpy(
-                                d_t_scan,
-                                t_scan,
-                                sizeof(int)*10,
-                                cudaMemcpyHostToDevice),
-                            "test scan failed", __FILE__, __LINE__)) return retval;
-                Scan<MgpuScanTypeInc>(d_t_scan, 10, (int)0, mgpu::plus<int>(),
-		            (int*)0, (int*)0, d_t_scan, context);
-
-                util::DisplayDeviceResults(d_t_scan, 10);
-                cudaFree(d_t_scan);
-                delete[] t_scan;*/
-
                 SizeT *temp = new SizeT[1];
                 cudaMemcpy(temp, problem->data_slices[0]->d_scanned_edges+queue_length-1, sizeof(SizeT), cudaMemcpyDeviceToHost);
                 SizeT output_queue_len = temp[0];
-                printf("num block:%d, scanned length:%d\n", num_block, output_queue_len);
                 
                 // Edge Expand Kernel
-		{
-                        gunrock::oprtr::edge_map_partitioned::RelaxLightEdges<EdgeMapPolicy, PSSSPProblem, SsspFunctor> <<< num_block, EdgeMapPolicy::THREADS >>>(
+                //if (output_queue_len < EdgeMapPolicy::LIGHT_EDGE_THRESHOLD)
+                {
+                    gunrock::oprtr::edge_map_partitioned::RelaxLightEdges<EdgeMapPolicy, PSSSPProblem, SsspFunctor> <<< num_block, EdgeMapPolicy::THREADS >>>(
+                            queue_reset,
+                            queue_index,
+                            iteration,
+                            graph_slice->d_row_offsets,
+                            graph_slice->d_column_indices,
+                            problem->data_slices[0]->d_scanned_edges,
+                            d_done,
+                            graph_slice->frontier_queues.d_keys[selector],
+                            graph_slice->frontier_queues.d_keys[selector^1],
+                            data_slice,
+                            queue_length,
+                            output_queue_len,
+                            graph_slice->frontier_elements[selector],
+                            graph_slice->frontier_elements[selector^1],
+                            work_progress,
+                            this->edge_map_kernel_stats);
+                } 
+                /*else {
+                        unsigned int split_val = (output_queue_len + EdgeMapPolicy::BLOCKS - 1) / EdgeMapPolicy::BLOCKS;
+                        util::MemsetIdxKernel<<<128, 128>>>(d_node_locks, EdgeMapPolicy::BLOCKS, split_val);
+                        SortedSearch<MgpuBoundsLower>(d_node_locks, EdgeMapPolicy::BLOCKS, problem->data_slices[0]->d_scanned_edges, queue_length, d_node_locks_out, context);
+                        //printf("scanned edge:\n");
+                        //util::DisplayDeviceResults(problem->data_slices[0]->d_scanned_edges, queue_length);
+                        //printf("split val:\n");
+                        //util::DisplayDeviceResults(d_node_locks, EdgeMapPolicy::BLOCKS);
+                        //util::DisplayDeviceResults(d_node_locks_out, EdgeMapPolicy::BLOCKS);
+                        
+                         gunrock::oprtr::edge_map_partitioned::RelaxPartitionedEdges<EdgeMapPolicy, PSSSPProblem, SsspFunctor> <<< EdgeMapPolicy::BLOCKS, EdgeMapPolicy::THREADS >>>(
                                         queue_reset,
                                         queue_index,
                                         iteration,
                                         graph_slice->d_row_offsets,
                                         graph_slice->d_column_indices,
                                         problem->data_slices[0]->d_scanned_edges,
+                                        d_node_locks_out,
+                                        EdgeMapPolicy::BLOCKS,
                                         d_done,
                                         graph_slice->frontier_queues.d_keys[selector],
                                         graph_slice->frontier_queues.d_keys[selector^1],
                                         data_slice,
                                         queue_length,
                                         output_queue_len,
+                                        split_val,
                                         graph_slice->frontier_elements[selector],
                                         graph_slice->frontier_elements[selector^1],
                                         work_progress,
-                                        this->edge_map_kernel_stats);
-                }
-		//Only need to reset queue for once
+                                        this->edge_map_kernel_stats);   
+                    }*/
+		        //Only need to reset queue for once
                 if (queue_reset)
                     queue_reset = false;
 
@@ -481,8 +492,8 @@ class PSSSPEnactor : public EnactorBase
                 300,                                // CUDA_ARCH
                 INSTRUMENT,                         // INSTRUMENT
 		1,
+		8,
 		10,
-		15,
 		32 * 1024>
                     EdgeMapPolicy;
 
