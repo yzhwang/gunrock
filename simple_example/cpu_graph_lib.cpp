@@ -11,9 +11,13 @@
  *
  * @brief library implementation of the CPU versions of the algorithms
  */
+
+#include <stdio.h>
  
 #if defined(_WIN32) || defined(_WIN64)
-#include <windows.h>
+    #include <windows.h>
+#else
+    #include <sys/resource.h>
 #endif
 
 #include <boost/config.hpp>
