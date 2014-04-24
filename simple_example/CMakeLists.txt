@@ -102,7 +102,7 @@ ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
 #set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -g;-G)
 
-set (CCFILES simple_example.cu)
+set (CCFILES simple_example.cu cpu_graph_lib.cpp)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 
 CUDA_ADD_EXECUTABLE(simple_example_${CUDA_VERSION_STRING}_${gunrock_arch_suffix}
