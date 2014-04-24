@@ -54,11 +54,11 @@ option(CUDPP_GENCODE_SM30
 option(CUDPP_GENCODE_SM35
        "ON to generate code for Compute Capability 3.5 devices (e.g. Tesla K20)"
        OFF)
-       
+
 option(CUDPP_GENCODE_SM50
        "ON to generate code for Compute Capability 5.0 devices (e.g. GeForce GTX 750 TI)"
        OFF)
-       
+
 option(CUDA_VERBOSE_PTXAS
        "On to enable verbose output from the PTXAS assembler."
        OFF
@@ -96,12 +96,15 @@ if (WIN32)
   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcompiler /bigobj -Xcompiler /Zm500)
 endif (WIN32)
 
+IF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+  set(CUDA_HOST_COMPILER /usr/bin/clang)
+ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+
 #set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -g;-G)
 
 set (CCFILES simple_example.cu)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-CUDA_ADD_EXECUTABLE(simple_example_${CUDA_VERSION_STRING}_${gunrock_arch_suffix}  
-  ${CCFILES} 
+CUDA_ADD_EXECUTABLE(simple_example_${CUDA_VERSION_STRING}_${gunrock_arch_suffix}
+  ${CCFILES}
   OPTIONS ${GENCODE} ${VERBOSE_PTXAS})
-  
