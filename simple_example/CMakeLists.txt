@@ -96,9 +96,19 @@ if (WIN32)
   set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -Xcompiler /bigobj -Xcompiler /Zm500)
 endif (WIN32)
 
-IF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
-  set(CUDA_HOST_COMPILER /usr/bin/clang)
-ENDIF(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+ # also see how to do overrides:
+ # https://gist.github.com/robertmaynard/11297565
+ set( CUDA_HOST_COMPILER /opt/local/bin/g++-mp-4.7 CACHE FILEPATH
+   "Host side compiler used by NVCC"
+   FORCE )
+ set(CMAKE_C_COMPILER /opt/local/bin/gcc-mp-4.7 CACHE FILEPATH
+   "C compiler"
+   FORCE )
+ set(CMAKE_CXX_COMPILER /opt/local/bin/g++-mp-4.7 CACHE FILEPATH
+   "CXX compiler"
+   FORCE )
+endif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
 
 #set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS} -g;-G)
 
