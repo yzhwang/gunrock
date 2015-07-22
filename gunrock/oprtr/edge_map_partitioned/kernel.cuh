@@ -84,6 +84,7 @@ struct Dispatch
                                 VertexId &queue_index,
                                 int &label,
                                 SizeT *&d_row_offsets,
+                                SizeT *&d_inverse_row_offsets,
                                 VertexId *&d_column_indices,
                                 VertexId *&d_inverse_column_indices,
                                 unsigned int *&d_scanned_edges,
@@ -101,7 +102,8 @@ struct Dispatch
                                 util::CtaWorkProgress &work_progress,
                                 util::KernelRuntimeStats &kernel_stats,
                                 gunrock::oprtr::advance::TYPE ADVANCE_TYPE,
-                                bool &inverse_graph, 
+                                bool &input_inverse_graph, 
+                                bool &output_inverse_graph,
                                 gunrock::oprtr::advance::REDUCE_TYPE R_TYPE,
                                 gunrock::oprtr::advance::REDUCE_OP R_OP,
                                 Value *&d_value_to_reduce,
@@ -217,6 +219,7 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                                 VertexId &queue_index,
                                 int &label,
                                 SizeT *&d_row_offsets,
+                                SizeT *&d_inverse_row_offsets,
                                 VertexId *&d_column_indices,
                                 VertexId *&d_inverse_column_indices,
                                 unsigned int *&d_scanned_edges,
@@ -234,7 +237,8 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                                 util::CtaWorkProgress &work_progress,
                                 util::KernelRuntimeStats &kernel_stats,
                                 gunrock::oprtr::advance::TYPE &ADVANCE_TYPE,
-                                bool &inverse_graph, 
+                                bool &input_inverse_graph, 
+                                bool &output_inverse_graph, 
                                 gunrock::oprtr::advance::REDUCE_TYPE R_TYPE,
                                 gunrock::oprtr::advance::REDUCE_OP R_OP,
                                 Value *&d_value_to_reduce,
@@ -321,11 +325,11 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                                             s_edge_ids[tid] = 0;
                                         }
                                         if (ADVANCE_TYPE == gunrock::oprtr::advance::E2V || ADVANCE_TYPE == gunrock::oprtr::advance::E2E) {
-                                            if (inverse_graph)
-                                                s_vertices[tid] = my_start_partition + tid < my_end_partition ? d_inverse_column_indices[d_queue[my_start_partition+tid]] : -1;
+                                            if (input_inverse_graph)
+                                                s_vertices[tid] = my_start_partition + tid < my_end_partition ? d_inverse_column_indices[d_queue[my_start_partition+tid]] : max_vertices;
                                             else
                                                 s_vertices[tid] = my_start_partition + tid < my_end_partition ? d_column_indices[d_queue[my_start_partition+tid]] : -1;
-                                            s_edge_ids[tid] = my_start_partition + tid < my_end_partition ? d_queue[my_start_partition+tid] : -1;
+                                            s_edge_ids[tid] = my_start_partition + tid < my_end_partition ? d_queue[my_start_partition+tid] : max_vertices;
                                         }
 
                                         int last = my_start_partition + KernelPolicy::THREADS >= my_end_partition ? my_end_partition - my_start_partition - 1 : KernelPolicy::THREADS - 1;
@@ -338,29 +342,23 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                                         VertexId e_id = s_edge_ids[v_index];
                                         SizeT end_last = (v_index < my_end_partition ? s_edges[v_index] : max_edges);
                                         SizeT internal_offset = v_index > 0 ? s_edges[v_index-1] : 0;
-                                        SizeT lookup_offset = d_row_offsets[v];
+                                        SizeT lookup_offset = (output_inverse_graph) ? d_inverse_row_offsets[v] : d_row_offsets[v];
 
                                         for (int i = (tid + e_offset); i < e_last + e_offset; i+=KernelPolicy::THREADS)
                                         {
                                             if (i >= end_last)
                                             {
                                                 v_index = BinarySearch<KernelPolicy::THREADS>(i, s_edges);
-                                                if (ADVANCE_TYPE == gunrock::oprtr::advance::V2V || ADVANCE_TYPE == gunrock::oprtr::advance::V2E) {
-                                                    v = s_vertices[v_index];
-                                                    e_id = 0;
-                                                }
-                                                if (ADVANCE_TYPE == gunrock::oprtr::advance::E2V || ADVANCE_TYPE == gunrock::oprtr::advance::E2E) {
-                                                    v = inverse_graph ? d_inverse_column_indices[s_vertices[v_index]] : d_column_indices[s_vertices[v_index]];
-                                                    e_id = s_vertices[v_index];
-                                                }
+                                                v = s_vertices[v_index];
+                                                e_id = s_edge_ids[v_index];
                                                 end_last = (v_index < KernelPolicy::THREADS ? s_edges[v_index] : max_edges);
                                                 internal_offset = v_index > 0 ? s_edges[v_index-1] : 0;
-                                                lookup_offset = d_row_offsets[v];
+                                                lookup_offset = (output_inverse_graph) ? d_inverse_row_offsets[v] : d_row_offsets[v];
                                             }
 
                                             int e = i - internal_offset;
                                             int lookup = lookup_offset + e;
-                                            VertexId u = d_column_indices[lookup];
+                                            VertexId u = (output_inverse_graph) ? d_inverse_column_indices[lookup] : d_column_indices[lookup];
                                             SizeT out_index = out_offset+edges_processed+(i-e_offset);
 
                                             { 
@@ -448,8 +446,8 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                                                         }
                                                     }
                                                 } else {
-                                                    if (Functor::CondEdge(v, u, problem, lookup, e_id)) {
-                                                        Functor::ApplyEdge(v, u, problem, lookup, e_id);
+                                                    if (Functor::CondEdge(v, u, problem, lookup, v_index)) {
+                                                        Functor::ApplyEdge(v, u, problem, lookup, v_index);
                                                         if (d_out != NULL) {
                                                             if (ADVANCE_TYPE == gunrock::oprtr::advance::V2V) {
                                                                 util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
@@ -738,8 +736,8 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                 }
             } else { 
                 //v:pre, u:neighbor, outoffset:offset+i
-                if (Functor::CondEdge(v, u, problem, lookup, i)) {
-                    Functor::ApplyEdge(v, u, problem, lookup, i);
+                if (Functor::CondEdge(v, u, problem, lookup, v_index)) {
+                    Functor::ApplyEdge(v, u, problem, lookup, v_index);
                     if (d_out != NULL) {
                         if (ADVANCE_TYPE == gunrock::oprtr::advance::V2V) {
                             util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
@@ -868,6 +866,7 @@ void RelaxPartitionedEdges2(
         typename KernelPolicy::VertexId         queue_index,
         int                                     label,
         typename KernelPolicy::SizeT            *d_row_offsets,
+        typename KernelPolicy::SizeT            *d_inverse_row_offsets,
         typename KernelPolicy::VertexId         *d_column_indices,
         typename KernelPolicy::VertexId         *d_inverse_column_indices,
         unsigned int                            *d_scanned_edges,
@@ -885,7 +884,8 @@ void RelaxPartitionedEdges2(
         util::CtaWorkProgress                   work_progress,
         util::KernelRuntimeStats                kernel_stats,
         gunrock::oprtr::advance::TYPE ADVANCE_TYPE = gunrock::oprtr::advance::V2V,
-        bool                                    inverse_graph = false,
+        bool                                    input_inverse_graph = false,
+        bool                                    output_inverse_graph = false,
         gunrock::oprtr::advance::REDUCE_TYPE R_TYPE = gunrock::oprtr::advance::EMPTY,
         gunrock::oprtr::advance::REDUCE_OP R_OP = gunrock::oprtr::advance::NONE,
         typename KernelPolicy::Value            *d_value_to_reduce = NULL,
@@ -896,6 +896,7 @@ void RelaxPartitionedEdges2(
             queue_index,
             label,
             d_row_offsets,
+            d_inverse_row_offsets,
             d_column_indices,
             d_inverse_column_indices,
             d_scanned_edges,
@@ -913,7 +914,8 @@ void RelaxPartitionedEdges2(
             work_progress,
             kernel_stats,
             ADVANCE_TYPE,
-            inverse_graph,
+            input_inverse_graph,
+            output_inverse_graph,
             R_TYPE,
             R_OP,
             d_value_to_reduce,

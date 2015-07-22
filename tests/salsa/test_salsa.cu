@@ -371,7 +371,7 @@ void RunTests(
     CommandLineArgs &args,
     CudaContext& context)
 {
-    SizeT               max_iter            = 1;
+    SizeT               max_iter            = 20;
     bool                instrumented        = false;        // Whether or not to collect instrumentation from kernels
     int                 max_grid_size       = 0;            // maximum grid size (0: leave it up to the enactor)
     int                 num_gpus            = 1;            // Number of GPUs for multi-gpu enactor to use
