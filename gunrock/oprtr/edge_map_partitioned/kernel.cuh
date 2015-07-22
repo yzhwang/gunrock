@@ -738,8 +738,8 @@ struct Dispatch<KernelPolicy, ProblemData, Functor, true>
                 }
             } else { 
                 //v:pre, u:neighbor, outoffset:offset+i
-                if (Functor::CondEdge(v, u, problem, lookup, i)) {
-                    Functor::ApplyEdge(v, u, problem, lookup, i);
+                if (Functor::CondEdge(v, u, problem, lookup, v_index)) {
+                    Functor::ApplyEdge(v, u, problem, lookup, v_index);
                     if (d_out != NULL) {
                         if (ADVANCE_TYPE == gunrock::oprtr::advance::V2V) {
                             util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(

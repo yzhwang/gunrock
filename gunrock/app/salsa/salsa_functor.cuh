@@ -110,8 +110,8 @@ struct HBACKWARDFunctor
     static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id, DataSlice *problem, VertexId e_id = 0, VertexId e_id_in = 0)
     {
         VertexId v_id = problem->d_hub_predecessors[e_id_in];
-        Value hrank_dst = problem->d_hrank_curr[d_id] / (problem->d_in_degrees[s_id] * problem->d_out_degrees[d_id]);
-        printf("eid_in:%d, v:%d, s:%d, d:%d in(s):%d, out(d):%d, H(d):%5f\n", e_id_in, v_id, s_id, d_id, problem->d_in_degrees[s_id], problem->d_out_degrees[d_id], problem->d_hrank_curr[d_id]);
+        Value hrank_dst = (problem->d_in_degrees[s_id] == 0 || problem->d_out_degrees[d_id] == 0) ? 0 : problem->d_hrank_curr[d_id] / (problem->d_in_degrees[s_id] * problem->d_out_degrees[d_id]);
+        //printf("eid_in:%d, v:%d, s:%d, d:%d in(s):%d, out(d):%d, H(d):%5f\n", e_id_in, v_id, s_id, d_id, problem->d_in_degrees[s_id], problem->d_out_degrees[d_id], problem->d_hrank_curr[d_id]);
         atomicAdd(&problem->d_hrank_next[v_id], hrank_dst);
     }
 };
@@ -207,8 +207,8 @@ struct ABACKWARDFunctor
     {
         // TODO: fix v_id, it doesn't have the correct 2-hop predecessor.
         VertexId v_id = problem->d_auth_predecessors[e_id_in];
-        Value arank_dst = problem->d_arank_curr[d_id] / (problem->d_out_degrees[s_id] * problem->d_in_degrees[d_id]);
-        printf("eid_in:%d, v:%d, s:%d, d:%d in(s):%d, out(d):%d, H(d):%5f\n", e_id_in, v_id, s_id, d_id, problem->d_in_degrees[s_id], problem->d_out_degrees[d_id], problem->d_hrank_curr[d_id]);
+        Value arank_dst = (problem->d_out_degrees[s_id] == 0 || problem->d_in_degrees[d_id] == 0) ? 0 : problem->d_arank_curr[d_id] / (problem->d_out_degrees[s_id] * problem->d_in_degrees[d_id]);
+        //printf("eid_in:%d, v:%d, s:%d, d:%d in(s):%d, out(d):%d, H(d):%5f\n", e_id_in, v_id, s_id, d_id, problem->d_in_degrees[s_id], problem->d_out_degrees[d_id], problem->d_hrank_curr[d_id]);
         //printf("v:%d, s:%d, d:%d\n",v_id, s_id, d_id);
         //printf("out(s):%d, in(d):%d, A(d):%5f\n", problem->d_out_degrees[s_id], problem->d_in_degrees[d_id], problem->d_arank_curr[d_id]);
         atomicAdd(&problem->d_arank_next[v_id], arank_dst);

@@ -315,13 +315,6 @@ class SALSAEnactor : public EnactorBase
 
                 util::MemsetIdxKernel<<<128, 128>>>(graph_slice->frontier_queues.d_keys[frontier_attribute.selector], graph_slice->edges);
 
-                /*if (retval = util::GRError(cudaBindTexture(
-                    0,
-                    gunrock::oprtr::edge_map_forward::RowOffsetTex<SizeT>::ref,
-                    graph_slice->d_column_offsets,
-                    row_offsets_desc,
-                    (graph_slice->nodes + 1) * sizeof(SizeT)),
-                        "SALSAEnactor cudaBindTexture row_offset_tex_ref failed", __FILE__, __LINE__)) break;*/
 
                 frontier_attribute.queue_length     = graph_slice->edges;
                 if (retval = work_progress.SetQueueLength(frontier_attribute.queue_index, frontier_attribute.queue_length)) break;
@@ -359,13 +352,6 @@ class SALSAEnactor : public EnactorBase
 
                 NormalizeRank<SALSAProblem>(problem, context, 0, graph_slice->nodes);
 
-                /*if (retval = util::GRError(cudaBindTexture(
-                    0,
-                    gunrock::oprtr::edge_map_forward::RowOffsetTex<SizeT>::ref,
-                    graph_slice->d_row_offsets,
-                    row_offsets_desc,
-                    (graph_slice->nodes + 1) * sizeof(SizeT)),
-                        "SALSAEnactor cudaBindTexture row_offset_tex_ref failed", __FILE__, __LINE__)) break;*/
 
                 // Edge Map
                 gunrock::oprtr::advance::LaunchKernel<AdvanceKernelPolicy, SALSAProblem, ABackwardFunctor>(
