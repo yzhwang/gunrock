@@ -255,6 +255,7 @@ class MISEnactor : public EnactorBase
                 context,
                 gunrock::oprtr::advance::V2V,
                 false, //not inverse_graph
+                false, //for SALSA
                 gunrock::oprtr::advance::MAXIMUM,   //REDUCE_OP
                 gunrock::oprtr::advance::VERTEX,    //REDUCE_TYPE (get reduced value from a |V| array
                 problem->data_slices[enactor_stats.gpu_id]->d_labels,
