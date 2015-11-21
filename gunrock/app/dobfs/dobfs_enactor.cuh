@@ -800,7 +800,7 @@ class DOBFSEnactor : public EnactorBase
                     32,                                 // WARP_GATHER_THRESHOLD
                     128 * 4,                            // CTA_GATHER_THRESHOLD
                     7,                                  // LOG_SCHEDULE_GRANULARITY
-                    gunrock::oprtr::advance::LB>
+                    gunrock::oprtr::advance::LB_LIGHT>
                         AdvanceKernelPolicy;
 
                 typedef gunrock::oprtr::filter::KernelPolicy<

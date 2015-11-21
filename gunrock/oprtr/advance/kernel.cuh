@@ -107,6 +107,7 @@ template <typename KernelPolicy, typename ProblemData, typename Functor>
     {
         case TWC_FORWARD:
         {
+            printf("Thread:%d, grid_size:%d\n", KernelPolicy::THREAD_WARP_CTA_FORWARD::THREADS, enactor_stats.advance_grid_size);
             // Load Thread Warp CTA Forward Kernel
             gunrock::oprtr::edge_map_forward::Kernel<typename KernelPolicy::THREAD_WARP_CTA_FORWARD, ProblemData, Functor>
                 <<<enactor_stats.advance_grid_size, KernelPolicy::THREAD_WARP_CTA_FORWARD::THREADS>>>(
@@ -458,6 +459,80 @@ template <typename KernelPolicy, typename ProblemData, typename Functor>
             }
             break;
         }
+        case LB_LIGHT:
+        {
+            typedef typename ProblemData::SizeT         SizeT;
+            typedef typename ProblemData::VertexId      VertexId;
+            typedef typename ProblemData::Value         Value;
+            typedef typename KernelPolicy::LOAD_BALANCED LBPOLICY;
+            int num_block = (frontier_attribute.queue_length + KernelPolicy::LOAD_BALANCED::THREADS - 1)/KernelPolicy::LOAD_BALANCED::THREADS;
+            //input inverse graph:false, to get the right edge, output inverse graph:true to get right neighbor list
+                gunrock::oprtr::edge_map_partitioned::GetEdgeCounts<typename KernelPolicy::LOAD_BALANCED, ProblemData, Functor>
+                    <<< num_block, KernelPolicy::LOAD_BALANCED::THREADS >>>(
+                            d_row_offsets,
+                            d_column_indices,
+                            d_column_offsets,
+                            d_row_indices,
+                            d_in_key_queue,
+                            partitioned_scanned_edges,
+                            frontier_attribute.queue_length+1,
+                            max_in,
+                            max_out,
+                            ADVANCE_TYPE,
+                            input_inverse_graph,
+                            output_inverse_graph);
+
+            /*util::DisplayDeviceResults(d_row_indices, max_out);
+            util::DisplayDeviceResults(d_column_offsets, max_in);
+            util::DisplayDeviceResults(d_column_indices, max_out);
+            util::DisplayDeviceResults(d_row_offsets, max_in);*/
+            
+
+
+
+            Scan<mgpu::MgpuScanTypeExc>((int*)partitioned_scanned_edges, frontier_attribute.queue_length+1, (int)0, mgpu::plus<int>(),
+            (int*)0, (int*)0, (int*)partitioned_scanned_edges, context);
+
+            //util::DisplayDeviceResults(partitioned_scanned_edges, frontier_attribute.queue_length+1);
+
+            SizeT *temp = new SizeT[1];
+            cudaMemcpy(temp,partitioned_scanned_edges+frontier_attribute.queue_length, sizeof(SizeT), cudaMemcpyDeviceToHost);
+            SizeT output_queue_len = temp[0];
+
+            //printf("output queue len:%d\n", output_queue_len);
+
+            {
+                gunrock::oprtr::edge_map_partitioned::RelaxLightEdges<LBPOLICY, ProblemData, Functor>
+                <<< num_block, KernelPolicy::LOAD_BALANCED::THREADS >>>(
+                        frontier_attribute.queue_reset,
+                        frontier_attribute.queue_index,
+                        enactor_stats.iteration,
+                        d_row_offsets,
+                        d_column_offsets,
+                        d_column_indices,
+                        d_row_indices,
+                        &partitioned_scanned_edges[1],
+                        d_done,
+                        d_in_key_queue,
+                        d_out_key_queue,
+                        data_slice,
+                        frontier_attribute.queue_length,
+                        output_queue_len,
+                        max_in,
+                        max_out,
+                        work_progress,
+                        enactor_stats.advance_kernel_stats,
+                        ADVANCE_TYPE,
+                        input_inverse_graph,
+                        output_inverse_graph,
+                        R_TYPE,
+                        R_OP,
+                        d_value_to_reduce,
+                        d_reduce_frontier);
+            }
+            break;
+        }
+
     }
 }
 
