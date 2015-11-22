@@ -267,49 +267,8 @@ struct Csr {
             }
         }
 
-<<<<<<< HEAD
         VertexId prev_row = -1;
         for (SizeT edge = 0; edge < real_edge; edge++) {
-=======
-        SizeT edge_offsets[129];
-        SizeT edge_counts [129];
-        #pragma omp parallel
-        {
-            int num_threads  = omp_get_num_threads();
-            int thread_num   = omp_get_thread_num();
-            SizeT edge_start = (long long)(coo_edges) * thread_num / num_threads;
-            SizeT edge_end   = (long long)(coo_edges) * (thread_num + 1) / num_threads;
-            SizeT node_start = (long long)(coo_nodes) * thread_num / num_threads;
-            SizeT node_end   = (long long)(coo_nodes) * (thread_num + 1) / num_threads;
-            Tuple *new_coo   = (Tuple*) malloc (sizeof(Tuple) * (edge_end - edge_start));
-            SizeT edge       = edge_start;
-            SizeT new_edge   = 0;
-            for (edge = edge_start; edge < edge_end; edge++)
-            {
-                VertexId col = coo[edge].col;
-                VertexId row = coo[edge].row;
-                if ((col != row) && (edge == 0 || col != coo[edge - 1].col || row != coo[edge - 1].row))
-                {
-                    new_coo[new_edge].col = col;
-                    new_coo[new_edge].row = row;
-                    new_coo[new_edge].val = coo[edge].val;
-                    new_edge++;
-                }
-            }
-            edge_counts[thread_num] = new_edge;
-            for (VertexId node = node_start; node < node_end; node++)
-                row_offsets[node] = -1;
-
-            #pragma omp barrier
-            #pragma omp single
-            {
-                edge_offsets[0] = 0;
-                for (int i = 0; i < num_threads; i++)
-                    edge_offsets[i + 1] = edge_offsets[i] + edge_counts[i];
-                //util::cpu_mt::PrintCPUArray("edge_offsets", edge_offsets, num_threads+1);
-                row_offsets[0] = 0;
-            }
->>>>>>> 9e15914... Removed graph processing code, changed the readin order to row, col for matrix
 
             VertexId current_row = new_coo[edge].row;
 
