@@ -30,13 +30,9 @@ namespace mst {
  * @tparam SizeT       Type of unsigned integer for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct SuccFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct SuccFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -51,10 +47,10 @@ struct SuccFunctor
    * \return Whether to load the apply function for the edge and include
    * the destination node in the next frontier.
    */
-  static __device__ __forceinline__ bool CondEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
     // find successors that contribute to the reduced weight value
     return problem->d_reduced_vals[s_id] == problem->d_edge_weights[e_id];
   }
@@ -68,10 +64,10 @@ struct SuccFunctor
    * @param[in] e_id Output edge index
    * @param[in] e_id_in Input edge index
    */
-  static __device__ __forceinline__ void ApplyEdge(
-    VertexId s_id,  VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
     // select one successor with minimum vertex id
     atomicMin(&problem->d_successors[s_id], d_id);
   }
@@ -86,13 +82,9 @@ struct SuccFunctor
  * @tparam SizeT       Type of unsigned integer for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct EdgeFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct EdgeFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -107,12 +99,12 @@ struct EdgeFunctor
    * \return Whether to load the apply function for the edge and include
    * the destination node in the next frontier.
    */
-  static __device__ __forceinline__ bool CondEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
     return problem->d_successors[s_id] == d_id &&
-      problem->d_reduced_vals[s_id] == problem->d_edge_weights[e_id];
+           problem->d_reduced_vals[s_id] == problem->d_edge_weights[e_id];
   }
 
   /**
@@ -124,12 +116,12 @@ struct EdgeFunctor
    * @param[in] e_id Output edge index
    * @param[in] e_id_in Input edge index
    */
-  static __device__ __forceinline__ void ApplyEdge(
-    VertexId s_id,  VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      problem->d_origin_edges[e_id], problem->d_temp_index + s_id);
+        problem->d_origin_edges[e_id], problem->d_temp_index + s_id);
   }
 };
 
@@ -142,13 +134,9 @@ struct EdgeFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct MarkFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct MarkFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -163,10 +151,10 @@ struct MarkFunctor
    * \return Whether to load the apply function for the edge and include
    * the destination node in the next frontier.
    */
-  static __device__ __forceinline__ bool CondEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
     return true;
   }
 
@@ -179,13 +167,13 @@ struct MarkFunctor
    * @param[in] e_id Output edge index
    * @param[in] e_id_in Input edge index
    */
-  static __device__ __forceinline__ void ApplyEdge(
-  VertexId s_id, VertexId d_id, DataSlice *problem,
-  VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
     // mark minimum spanning tree output edges
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      1, problem->d_mst_output + problem->d_temp_index[s_id]);
+        1, problem->d_mst_output + problem->d_temp_index[s_id]);
   }
 };
 
@@ -198,13 +186,9 @@ struct MarkFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct CyRmFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct CyRmFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -219,13 +203,13 @@ struct CyRmFunctor
    * \return Whether to load the apply function for the edge and include
    * the destination node in the next frontier.
    */
-  static __device__ __forceinline__ bool CondEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
     // cycle of length two
     return problem->d_successors[s_id] > s_id &&
-      problem->d_successors[problem->d_successors[s_id]] == s_id;
+           problem->d_successors[problem->d_successors[s_id]] == s_id;
   }
 
   /**
@@ -237,17 +221,17 @@ struct CyRmFunctor
    * @param[in] e_id Output edge index
    * @param[in] e_id_in Input edge index
    */
-  static __device__ __forceinline__ void ApplyEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
     // remove cycles by assigning successor to its s_id
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      s_id, problem->d_successors + s_id);
+        s_id, problem->d_successors + s_id);
 
     // remove some edges in the MST output result
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      0, problem->d_mst_output + problem->d_temp_index[s_id]);
+        0, problem->d_mst_output + problem->d_temp_index[s_id]);
   }
 };
 
@@ -259,13 +243,9 @@ struct CyRmFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct PJmpFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct PJmpFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -278,9 +258,10 @@ struct PJmpFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return true;
   }
 
@@ -292,21 +273,21 @@ struct PJmpFunctor
    * @param[in] problem Data slice object
    * @param[in] v Vertex value
    */
-  static __device__ __forceinline__ void ApplyFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     VertexId parent;
     util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-      parent, problem->d_successors + node);
+        parent, problem->d_successors + node);
     VertexId grand_parent;
     util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-      grand_parent, problem->d_successors + parent);
-    if (parent != grand_parent)
-    {
+        grand_parent, problem->d_successors + parent);
+    if (parent != grand_parent) {
       util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-        0, problem->d_vertex_flag);
+          0, problem->d_vertex_flag);
       util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-        grand_parent, problem->d_successors + node);
+          grand_parent, problem->d_successors + node);
     }
   }
 };
@@ -320,13 +301,9 @@ struct PJmpFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct EgRmFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct EgRmFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -341,10 +318,10 @@ struct EgRmFunctor
    * \return Whether to load the apply function for the edge and include
    * the destination node in the next frontier.
    */
-  static __device__ __forceinline__ bool CondEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
     return problem->d_successors[s_id] == problem->d_successors[d_id];
   }
 
@@ -359,19 +336,19 @@ struct EgRmFunctor
    * @param[in] e_id Output edge index
    * @param[in] e_id_in Input edge index
    */
-  static __device__ __forceinline__ void ApplyEdge(
-    VertexId s_id, VertexId d_id, DataSlice *problem,
-    VertexId e_id = 0, VertexId e_id_in = 0)
-  {
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_keys_array + e_id);
+        (VertexId)-1, problem->d_keys_array + e_id);
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_col_indices + e_id);
-    //util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
+        (VertexId)-1, problem->d_col_indices + e_id);
+    // util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
     //  (Value)-1, problem->d_edge_weights + e_id);
-    problem->d_edge_weights[e_id] = (Value) -1;
+    problem->d_edge_weights[e_id] = (Value)-1;
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_origin_edges + e_id);
+        (VertexId)-1, problem->d_origin_edges + e_id);
   }
 
   /**
@@ -384,9 +361,10 @@ struct EgRmFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return true;
   }
 
@@ -398,15 +376,16 @@ struct EgRmFunctor
    * @param[in] problem Data slice object
    * @param[in] v Vertex value
    */
-  static __device__ __forceinline__ void ApplyFilter(
-  VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      problem->d_supervtx_ids[problem->d_keys_array[node]],
-      problem->d_keys_array + node);
+        problem->d_supervtx_ids[problem->d_keys_array[node]],
+        problem->d_keys_array + node);
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      problem->d_supervtx_ids[problem->d_col_indices[node]],
-      problem->d_col_indices + node);
+        problem->d_supervtx_ids[problem->d_col_indices[node]],
+        problem->d_col_indices + node);
   }
 };
 
@@ -420,13 +399,9 @@ struct EgRmFunctor
  * @tparam ProblemData Problem data type contains data slice for MST problem
  *
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct RIdxFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct RIdxFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -440,9 +415,10 @@ struct RIdxFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return problem->d_flags_array[node] == 1;
   }
 
@@ -454,11 +430,12 @@ struct RIdxFunctor
    * @param[in] v Vertex value
    *
    */
-  static __device__ __forceinline__ void ApplyFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      node, problem->d_row_offsets + problem->d_keys_array[node]);
+        node, problem->d_row_offsets + problem->d_keys_array[node]);
   }
 };
 
@@ -471,13 +448,9 @@ struct RIdxFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct EIdxFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct EIdxFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -490,9 +463,10 @@ struct EIdxFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return problem->d_edge_flags[node] == 1;
   }
 
@@ -503,11 +477,12 @@ struct EIdxFunctor
    * @param[in] problem Data slice object
    * @param[in] v node value (if any)
    */
-  static __device__ __forceinline__ void ApplyFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      node, problem->d_row_offsets + problem->d_temp_index[node]);
+        node, problem->d_row_offsets + problem->d_temp_index[node]);
   }
 };
 
@@ -520,13 +495,9 @@ struct EIdxFunctor
  * @tparam SizeT       Type of unsigned integer to use for array indexing
  * @tparam ProblemData Problem data type contains data slice for MST problem
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct OrFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct OrFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -539,9 +510,10 @@ struct OrFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return true;
   }
 
@@ -552,12 +524,13 @@ struct OrFunctor
    * @param[in] problem Data slice object
    * @param[in] v node value (if any)
    */
-  static __device__ __forceinline__ void ApplyFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      problem->d_edge_flags[node] | problem->d_flags_array[node],
-      problem->d_edge_flags + node);
+        problem->d_edge_flags[node] | problem->d_flags_array[node],
+        problem->d_edge_flags + node);
   }
 };
 
@@ -571,13 +544,9 @@ struct OrFunctor
  * @tparam ProblemData Problem data type contains data slice for MST problem
  *
  */
-template<
-  typename VertexId,
-  typename SizeT,
-  typename Value,
-  typename ProblemData>
-struct SuRmFunctor
-{
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct SuRmFunctor {
   typedef typename ProblemData::DataSlice DataSlice;
 
   /**
@@ -591,9 +560,10 @@ struct SuRmFunctor
    * \return Whether to load the apply function for the node and include
    * it in the outgoing vertex frontier.
    */
-  static __device__ __forceinline__ bool CondFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
     return problem->d_edge_flags[node] == 0;
   }
 
@@ -604,23 +574,24 @@ struct SuRmFunctor
    * @param[in] problem Data slice object
    * @param[in] v node value (if any)
    */
-  static __device__ __forceinline__ void ApplyFilter(
-    VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-  {
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_keys_array + node);
+        (VertexId)-1, problem->d_keys_array + node);
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_col_indices + node);
+        (VertexId)-1, problem->d_col_indices + node);
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (Value)   -1, problem->d_edge_weights + node);
+        (Value)-1, problem->d_edge_weights + node);
     util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-      (VertexId)-1, problem->d_origin_edges + node);
+        (VertexId)-1, problem->d_origin_edges + node);
   }
 };
 
-} // mst
-} // app
-} // gunrock
+}  // mst
+}  // app
+}  // gunrock
 
 // Leave this at the end of the file
 // Local Variables:

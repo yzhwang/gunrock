@@ -47,42 +47,39 @@ using namespace gunrock::app::pr;
  * @param[in] num_gpus Number of GPUs
  * @param[in] context CudaContext for moderngpu to use
  */
-template<typename VertexId, typename Value, typename SizeT>
- void run_pagerank(
-    GRGraph        *graph_o,
-    VertexId       *node_ids,
-    Value          *pagerank,
-    const Csr<VertexId, Value, SizeT> &csr,
-    const Value    delta,
-    const Value    error,
-    const SizeT    max_iter,
-    const int      max_grid_size,
-    const int      num_gpus,
-    CudaContext&   context) {
-    typedef PRProblem<VertexId, SizeT, Value> Problem;
-    PREnactor<false> enactor(false);  // PageRank enactor map
-    Problem *problem = new Problem;   // Allocate problem on GPU
+template <typename VertexId, typename Value, typename SizeT>
+void run_pagerank(GRGraph *graph_o, VertexId *node_ids, Value *pagerank,
+                  const Csr<VertexId, Value, SizeT> &csr, const Value delta,
+                  const Value error, const SizeT max_iter,
+                  const int max_grid_size, const int num_gpus,
+                  CudaContext &context) {
+  typedef PRProblem<VertexId, SizeT, Value> Problem;
+  PREnactor<false> enactor(false);  // PageRank enactor map
+  Problem *problem = new Problem;   // Allocate problem on GPU
 
-    util::GRError(problem->Init(false, csr, num_gpus),
-                  "PR Problem Initialization Failed", __FILE__, __LINE__);
+  util::GRError(problem->Init(false, csr, num_gpus),
+                "PR Problem Initialization Failed", __FILE__, __LINE__);
 
-    util::GRError(problem->Reset(0, delta, error, enactor.GetFrontierType()),
-                  "PR Problem Data Reset Failed", __FILE__, __LINE__);
+  util::GRError(problem->Reset(0, delta, error, enactor.GetFrontierType()),
+                "PR Problem Data Reset Failed", __FILE__, __LINE__);
 
-    GpuTimer gpu_timer; float elapsed = 0.0f; gpu_timer.Start();  // start
+  GpuTimer gpu_timer;
+  float elapsed = 0.0f;
+  gpu_timer.Start();  // start
 
-    util::GRError(enactor.template Enact<Problem>(
-                      context, problem, max_iter, max_grid_size),
-                  "PR Problem Enact Failed", __FILE__, __LINE__);
+  util::GRError(enactor.template Enact<Problem>(context, problem, max_iter,
+                                                max_grid_size),
+                "PR Problem Enact Failed", __FILE__, __LINE__);
 
-    gpu_timer.Stop(); elapsed = gpu_timer.ElapsedMillis();  // elapsed time
-    printf(" device elapsed time: %.4f ms\n", elapsed);
+  gpu_timer.Stop();
+  elapsed = gpu_timer.ElapsedMillis();  // elapsed time
+  printf(" device elapsed time: %.4f ms\n", elapsed);
 
-    util::GRError(problem->Extract(pagerank, node_ids),
-                  "PR Problem Extraction Failed", __FILE__, __LINE__);
+  util::GRError(problem->Extract(pagerank, node_ids),
+                "PR Problem Extraction Failed", __FILE__, __LINE__);
 
-    if (problem) delete problem;
-    cudaDeviceSynchronize();
+  if (problem) delete problem;
+  cudaDeviceSynchronize();
 }
 
 /**
@@ -96,70 +93,57 @@ template<typename VertexId, typename Value, typename SizeT>
  * @param[in]  data_t     data type configurations
  * @param[in]  context    moderngpu context
  */
-void dispatch_pagerank(
-    GRGraph       *graph_o,
-    void          *node_ids,
-    void          *pagerank,
-    const GRGraph *graph_i,
-    const GRSetup  config,
-    const GRTypes  data_t,
-    CudaContext   &context) {
-    switch (data_t.VTXID_TYPE) {
+void dispatch_pagerank(GRGraph *graph_o, void *node_ids, void *pagerank,
+                       const GRGraph *graph_i, const GRSetup config,
+                       const GRTypes data_t, CudaContext &context) {
+  switch (data_t.VTXID_TYPE) {
     case VTXID_INT: {
-        switch (data_t.SIZET_TYPE) {
+      switch (data_t.SIZET_TYPE) {
         case SIZET_INT: {
-            switch (data_t.VALUE_TYPE) {
+          switch (data_t.VALUE_TYPE) {
             case VALUE_INT: {  // template type = <int, int, int>
-                printf("Not Yet Support This DataType Combination.\n");
-                break;
+              printf("Not Yet Support This DataType Combination.\n");
+              break;
             }
             case VALUE_UINT: {  // template type = <int, uint, int>
-                printf("Not Yet Support This DataType Combination.\n");
-                break;
+              printf("Not Yet Support This DataType Combination.\n");
+              break;
             }
             case VALUE_FLOAT: {  // template type = <int, float, int>
-                // build input csr format graph
-                Csr<int, float, int> csr_graph(false);
-                csr_graph.nodes          = graph_i->num_nodes;
-                csr_graph.edges          = graph_i->num_edges;
-                csr_graph.row_offsets    = (int*)graph_i->row_offsets;
-                csr_graph.column_indices = (int*)graph_i->col_indices;
+              // build input csr format graph
+              Csr<int, float, int> csr_graph(false);
+              csr_graph.nodes = graph_i->num_nodes;
+              csr_graph.edges = graph_i->num_edges;
+              csr_graph.row_offsets = (int *)graph_i->row_offsets;
+              csr_graph.column_indices = (int *)graph_i->col_indices;
 
-                // pagerank configurations
-                float delta         = 0.85f;  // default delta value
-                float error         = 0.01f;  // error threshold
-                int   max_iter      = 20;     // maximum number of iterations
-                int   max_grid_size = 0;      // 0: leave it up to the enactor
-                int   num_gpus      = 1;      // for multi-gpu enactor to use
+              // pagerank configurations
+              float delta = 0.85f;    // default delta value
+              float error = 0.01f;    // error threshold
+              int max_iter = 20;      // maximum number of iterations
+              int max_grid_size = 0;  // 0: leave it up to the enactor
+              int num_gpus = 1;       // for multi-gpu enactor to use
 
-                delta    = config.delta;
-                error    = config.error;
-                max_iter = config.max_iter;
+              delta = config.delta;
+              error = config.error;
+              max_iter = config.max_iter;
 
-                run_pagerank<int, float, int>(
-                    graph_o,
-                    (int*)node_ids,
-                    (float*)pagerank,
-                    csr_graph,
-                    delta,
-                    error,
-                    max_iter,
-                    max_grid_size,
-                    num_gpus,
-                    context);
+              run_pagerank<int, float, int>(
+                  graph_o, (int *)node_ids, (float *)pagerank, csr_graph, delta,
+                  error, max_iter, max_grid_size, num_gpus, context);
 
-                // reset for free memory
-                csr_graph.row_offsets    = NULL;
-                csr_graph.column_indices = NULL;
-                break;
+              // reset for free memory
+              csr_graph.row_offsets = NULL;
+              csr_graph.column_indices = NULL;
+              break;
             }
-            }
-            break;
+          }
+          break;
         }
-        }
-        break;
+      }
+      break;
     }
-    }
+  }
 }
 
 /**
@@ -172,18 +156,14 @@ void dispatch_pagerank(
  * @param[in]  config     gunrock primitive specific configurations
  * @param[in]  data_t     gunrock data_t struct
  */
-void gunrock_pagerank(
-    GRGraph       *graph_o,
-    void          *node_ids,
-    void          *pagerank,
-    const GRGraph *graph_i,
-    const GRSetup  config,
-    const GRTypes  data_t) {
-    unsigned int device = 0;
-    device = config.device;
-    ContextPtr context = mgpu::CreateCudaDevice(device);
-    dispatch_pagerank(
-        graph_o, node_ids, pagerank, graph_i, config, data_t, *context);
+void gunrock_pagerank(GRGraph *graph_o, void *node_ids, void *pagerank,
+                      const GRGraph *graph_i, const GRSetup config,
+                      const GRTypes data_t) {
+  unsigned int device = 0;
+  device = config.device;
+  ContextPtr context = mgpu::CreateCudaDevice(device);
+  dispatch_pagerank(graph_o, node_ids, pagerank, graph_i, config, data_t,
+                    *context);
 }
 
 /*
@@ -195,43 +175,39 @@ void gunrock_pagerank(
  * @param[in]  col_indices CSR-formatted graph input column indices
  * @param[in]  source      Source to begin traverse
  */
-void pagerank(
-    int*                node_ids,
-    float*              pagerank,
-    const int           num_nodes,
-    const int           num_edges,
-    const int*          row_offsets,
-    const int*          col_indices) {
-    printf("-------------------- setting --------------------\n");
+void pagerank(int *node_ids, float *pagerank, const int num_nodes,
+              const int num_edges, const int *row_offsets,
+              const int *col_indices) {
+  printf("-------------------- setting --------------------\n");
 
-    struct GRTypes data_t;            // primitive-specific data types
-    data_t.VTXID_TYPE = VTXID_INT;    // integer
-    data_t.SIZET_TYPE = SIZET_INT;    // integer
-    data_t.VALUE_TYPE = VALUE_FLOAT;  // float ranks
+  struct GRTypes data_t;            // primitive-specific data types
+  data_t.VTXID_TYPE = VTXID_INT;    // integer
+  data_t.SIZET_TYPE = SIZET_INT;    // integer
+  data_t.VALUE_TYPE = VALUE_FLOAT;  // float ranks
 
-    struct GRSetup config;     // primitive-specific configures
-    config.device    =     0;  // setting device to run
-    config.delta     = 0.85f;  // default delta value
-    config.error     = 0.01f;  // default error threshold
-    config.max_iter  =    20;  // maximum number of iterations
+  struct GRSetup config;  // primitive-specific configures
+  config.device = 0;      // setting device to run
+  config.delta = 0.85f;   // default delta value
+  config.error = 0.01f;   // default error threshold
+  config.max_iter = 20;   // maximum number of iterations
 
-    struct GRGraph *graph_o = (struct GRGraph*)malloc(sizeof(struct GRGraph));
-    struct GRGraph *graph_i = (struct GRGraph*)malloc(sizeof(struct GRGraph));
+  struct GRGraph *graph_o = (struct GRGraph *)malloc(sizeof(struct GRGraph));
+  struct GRGraph *graph_i = (struct GRGraph *)malloc(sizeof(struct GRGraph));
 
-    graph_i->num_nodes   = num_nodes;
-    graph_i->num_edges   = num_edges;
-    graph_i->row_offsets = (void*)&row_offsets[0];
-    graph_i->col_indices = (void*)&col_indices[0];
+  graph_i->num_nodes = num_nodes;
+  graph_i->num_edges = num_edges;
+  graph_i->row_offsets = (void *)&row_offsets[0];
+  graph_i->col_indices = (void *)&col_indices[0];
 
-    printf(" loaded %d nodes and %d edges\n", num_nodes, num_edges);
+  printf(" loaded %d nodes and %d edges\n", num_nodes, num_edges);
 
-    printf("-------------------- running --------------------\n");
-    gunrock_pagerank(graph_o, node_ids, pagerank, graph_i, config, data_t);
+  printf("-------------------- running --------------------\n");
+  gunrock_pagerank(graph_o, node_ids, pagerank, graph_i, config, data_t);
 
-    if (graph_i) free(graph_i);
-    if (graph_o) free(graph_o);
+  if (graph_i) free(graph_i);
+  if (graph_o) free(graph_o);
 
-    printf("------------------- completed -------------------\n");
+  printf("------------------- completed -------------------\n");
 }
 
 // Leave this at the end of the file

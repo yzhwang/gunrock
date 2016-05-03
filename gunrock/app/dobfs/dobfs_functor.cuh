@@ -22,7 +22,7 @@ namespace app {
 namespace dobfs {
 
 // TODO:
-// 
+//
 // Prepare for reverse BFS (first two functor set)
 // 1) prepare unvisited queue
 //   VertexMap for all nodes, select whose label is -1
@@ -36,77 +36,94 @@ namespace dobfs {
 /**
  * @brief Structure contains device functions for Reverse BFS Preparation
  *
- * @tparam VertexId            Type of signed integer to use as vertex id (e.g., uint32)
- * @tparam SizeT               Type of unsigned integer to use for array indexing. (e.g., uint32)
- * @tparam ProblemData         Problem data type which contains data slice for BFS problem
+ * @tparam VertexId            Type of signed integer to use as vertex id (e.g.,
+ *uint32)
+ * @tparam SizeT               Type of unsigned integer to use for array
+ *indexing. (e.g., uint32)
+ * @tparam ProblemData         Problem data type which contains data slice for
+ *BFS problem
  *
  */
-template<typename VertexId, typename SizeT, typename Value, typename ProblemData>
-struct PrepareInputFrontierMapFunctor
-{
-    typedef typename ProblemData::DataSlice DataSlice;
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct PrepareInputFrontierMapFunctor {
+  typedef typename ProblemData::DataSlice DataSlice;
 
-    /**
-     * @brief Vertex mapping condition function. Check if the Vertex Id is valid.
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v auxiliary value
-     *
-     * \return Whether to load the apply function for the node and include it in the outgoing vertex frontier.
-     */
-    static __device__ __forceinline__ bool CondFilter(VertexId node, DataSlice *problem, Value v =0, SizeT nid=0)
-    {
-       return true; 
-    }
+  /**
+   * @brief Vertex mapping condition function. Check if the Vertex Id is valid.
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v auxiliary value
+   *
+   * \return Whether to load the apply function for the node and include it in
+   *the outgoing vertex frontier.
+   */
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
+    return true;
+  }
 
-    /**
-     * @brief Vertex mapping apply function. Set frontier_map_in
-     */
-    static __device__ __forceinline__ void ApplyFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-            true, problem->d_frontier_map_in + node);
-    }
+  /**
+   * @brief Vertex mapping apply function. Set frontier_map_in
+   */
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
+    util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
+        true, problem->d_frontier_map_in + node);
+  }
 };
 
 /**
  * @brief Structure contains device functions for Reverse BFS Preparation
  *
- * @tparam VertexId            Type of signed integer to use as vertex id (e.g., uint32)
- * @tparam SizeT               Type of unsigned integer to use for array indexing. (e.g., uint32)
- * @tparam ProblemData         Problem data type which contains data slice for BFS problem
+ * @tparam VertexId            Type of signed integer to use as vertex id (e.g.,
+ *uint32)
+ * @tparam SizeT               Type of unsigned integer to use for array
+ *indexing. (e.g., uint32)
+ * @tparam ProblemData         Problem data type which contains data slice for
+ *BFS problem
  *
  */
-template<typename VertexId, typename SizeT, typename Value, typename ProblemData>
-struct PrepareUnvisitedQueueFunctor
-{
-    typedef typename ProblemData::DataSlice DataSlice; 
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct PrepareUnvisitedQueueFunctor {
+  typedef typename ProblemData::DataSlice DataSlice;
 
-    /**
-     * @brief Vertex mapping condition function. Check if the Vertex Id is valid (label equals to -1).
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v auxiliary value
-     *
-     * \return Whether to load the apply function for the node and include it in the outgoing vertex frontier.
-     */
-    static __device__ __forceinline__ bool CondFilter(VertexId node, DataSlice *problem, Value v =0, SizeT nid=0)
-    {
-        VertexId label;
-        util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-            label, problem->d_labels + node);
-        return (label == -1);
-    }
+  /**
+   * @brief Vertex mapping condition function. Check if the Vertex Id is valid
+   *(label equals to -1).
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v auxiliary value
+   *
+   * \return Whether to load the apply function for the node and include it in
+   *the outgoing vertex frontier.
+   */
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
+    VertexId label;
+    util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
+        label, problem->d_labels + node);
+    return (label == -1);
+  }
 
-    /**
-     * @brief Vertex mapping apply function. Doing nothing.
-     */
-    static __device__ __forceinline__ void ApplyFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        // Doing nothing here
-    }
+  /**
+   * @brief Vertex mapping apply function. Doing nothing.
+   */
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
+    // Doing nothing here
+  }
 };
 
 // During the reverse BFS (third functor set)
@@ -117,84 +134,101 @@ struct PrepareUnvisitedQueueFunctor
 /**
  * @brief Structure contains device functions for Reverse BFS Preparation
  *
- * @tparam VertexId            Type of signed integer to use as vertex id (e.g., uint32)
- * @tparam SizeT               Type of unsigned integer to use for array indexing. (e.g., uint32)
- * @tparam ProblemData         Problem data type which contains data slice for BFS problem
+ * @tparam VertexId            Type of signed integer to use as vertex id (e.g.,
+ *uint32)
+ * @tparam SizeT               Type of unsigned integer to use for array
+ *indexing. (e.g., uint32)
+ * @tparam ProblemData         Problem data type which contains data slice for
+ *BFS problem
  *
  */
-template<typename VertexId, typename SizeT, typename Value, typename ProblemData>
-struct ReverseBFSFunctor
-{
-    typedef typename ProblemData::DataSlice DataSlice;
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct ReverseBFSFunctor {
+  typedef typename ProblemData::DataSlice DataSlice;
 
-    /**
-     * @brief Forward Edge Mapping condition function. Check if the destination node
-     * has been claimed as someone else's child.
-     *
-     * @param[in] s_id Vertex Id of the edge source node
-     * @param[in] d_id Vertex Id of the edge destination node
-     * @param[in] problem Data slice object
-     * @param[in] e_id output edge id
-     * @param[in] e_id_in input edge id
-     *
-     * \return Whether to load the apply function for the edge and include the destination node in the next frontier.
-     */
-    static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id, DataSlice *problem, VertexId e_id = 0, VertexId e_id_in = 0)
-    {
-        // Check if the destination node has been claimed as someone's child
-        //return (atomicCAS(&problem->d_preds[d_id], -2, s_id) == -2) ? true : false;
-        if (ProblemData::MARK_PREDECESSORS)
-            util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-                    s_id, problem->d_preds + d_id);
-        return true; 
-    }
+  /**
+   * @brief Forward Edge Mapping condition function. Check if the destination
+   *node
+   * has been claimed as someone else's child.
+   *
+   * @param[in] s_id Vertex Id of the edge source node
+   * @param[in] d_id Vertex Id of the edge destination node
+   * @param[in] problem Data slice object
+   * @param[in] e_id output edge id
+   * @param[in] e_id_in input edge id
+   *
+   * \return Whether to load the apply function for the edge and include the
+   *destination node in the next frontier.
+   */
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
+    // Check if the destination node has been claimed as someone's child
+    // return (atomicCAS(&problem->d_preds[d_id], -2, s_id) == -2) ? true :
+    // false;
+    if (ProblemData::MARK_PREDECESSORS)
+      util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
+          s_id, problem->d_preds + d_id);
+    return true;
+  }
 
-    /**
-     * @brief Forward Edge Mapping apply function. Now we know the source node
-     * has succeeded in claiming child, so it is safe to set label to its child
-     * node (destination node).
-     *
-     * @param[in] s_id Vertex Id of the edge source node
-     * @param[in] d_id Vertex Id of the edge destination node
-     * @param[in] problem Data slice object
-     * @param[in] e_id output edge id
-     * @param[in] e_id_in input edge id
-     *
-     */
-    static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id, DataSlice *problem, VertexId e_id = 0, VertexId e_id_in = 0)
-    {
-        //set d_labels[d_id] to be d_labels[s_id]+1
-        VertexId label = s_id;
-        if (ProblemData::MARK_PREDECESSORS)
-        util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-            label, problem->d_labels + s_id);
-        util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
-            label+1, problem->d_labels + d_id);
-        
-        //printf("src:%d, dst:%d, label:%d\n", s_id, d_id, problem->d_labels[d_id]);
-    }
+  /**
+   * @brief Forward Edge Mapping apply function. Now we know the source node
+   * has succeeded in claiming child, so it is safe to set label to its child
+   * node (destination node).
+   *
+   * @param[in] s_id Vertex Id of the edge source node
+   * @param[in] d_id Vertex Id of the edge destination node
+   * @param[in] problem Data slice object
+   * @param[in] e_id output edge id
+   * @param[in] e_id_in input edge id
+   *
+   */
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
+    // set d_labels[d_id] to be d_labels[s_id]+1
+    VertexId label = s_id;
+    if (ProblemData::MARK_PREDECESSORS)
+      util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
+          label, problem->d_labels + s_id);
+    util::io::ModifiedStore<ProblemData::QUEUE_WRITE_MODIFIER>::St(
+        label + 1, problem->d_labels + d_id);
 
-    /**
-     * @brief Vertex mapping condition function. Check if the Vertex Id is valid (not equals to -1).
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v auxiliary value
-     *
-     * \return Whether to load the apply function for the node and include it in the outgoing vertex frontier.
-     */
-    static __device__ __forceinline__ bool CondFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        return (node != -1);
-    }
+    // printf("src:%d, dst:%d, label:%d\n", s_id, d_id,
+    // problem->d_labels[d_id]);
+  }
 
-    /**
-     * @brief Vertex mapping apply function. Doing nothing.
-     */
-    static __device__ __forceinline__ void ApplyFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        // Doing nothing here
-    }
+  /**
+   * @brief Vertex mapping condition function. Check if the Vertex Id is valid
+   *(not equals to -1).
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v auxiliary value
+   *
+   * \return Whether to load the apply function for the node and include it in
+   *the outgoing vertex frontier.
+   */
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
+    return (node != -1);
+  }
+
+  /**
+   * @brief Vertex mapping apply function. Doing nothing.
+   */
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
+    // Doing nothing here
+  }
 };
 //
 // Switch back to normal BFS (final functor set)
@@ -204,45 +238,54 @@ struct ReverseBFSFunctor
 /**
  * @brief Structure contains device functions for Switching back to normal BFS
  *
- * @tparam VertexId            Type of signed integer to use as vertex id (e.g., uint32)
- * @tparam SizeT               Type of unsigned integer to use for array indexing. (e.g., uint32)
- * @tparam ProblemData         Problem data type which contains data slice for BFS problem
+ * @tparam VertexId            Type of signed integer to use as vertex id (e.g.,
+ *uint32)
+ * @tparam SizeT               Type of unsigned integer to use for array
+ *indexing. (e.g., uint32)
+ * @tparam ProblemData         Problem data type which contains data slice for
+ *BFS problem
  *
  */
-template<typename VertexId, typename SizeT, typename Value, typename ProblemData>
-struct SwitchToNormalFunctor
-{
-    typedef typename ProblemData::DataSlice DataSlice; 
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
+struct SwitchToNormalFunctor {
+  typedef typename ProblemData::DataSlice DataSlice;
 
-    /**
-     * @brief Vertex mapping condition function. Check if the Vertex Id is valid (frontier_map_out is set).
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v auxiliary value
-     *
-     * \return Whether to load the apply function for the node and include it in the outgoing vertex frontier.
-     */
-    static __device__ __forceinline__ bool CondFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        bool flag;
-        util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
-            flag, problem->d_frontier_map_out + node);
-        return (flag);
-    }
+  /**
+   * @brief Vertex mapping condition function. Check if the Vertex Id is valid
+   *(frontier_map_out is set).
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v auxiliary value
+   *
+   * \return Whether to load the apply function for the node and include it in
+   *the outgoing vertex frontier.
+   */
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
+    bool flag;
+    util::io::ModifiedLoad<ProblemData::COLUMN_READ_MODIFIER>::Ld(
+        flag, problem->d_frontier_map_out + node);
+    return (flag);
+  }
 
-    /**
-     * @brief Vertex mapping apply function. Doing nothing.
-     */
-    static __device__ __forceinline__ void ApplyFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid=0)
-    {
-        // Doing nothing here
-    }
+  /**
+   * @brief Vertex mapping apply function. Doing nothing.
+   */
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
+    // Doing nothing here
+  }
 };
 
-} // dobfs
-} // app
-} // gunrock
+}  // dobfs
+}  // app
+}  // gunrock
 
 // Leave this at the end of the file
 // Local Variables:

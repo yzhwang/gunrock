@@ -28,72 +28,78 @@ namespace sample {
  * @tparam ProblemData Problem data type which contains data slice
  *
  */
-template<typename VertexId, typename SizeT,
-         typename Value, typename ProblemData>
+template <typename VertexId, typename SizeT, typename Value,
+          typename ProblemData>
 struct SampleFunctor {
-    typedef typename ProblemData::DataSlice DataSlice;
+  typedef typename ProblemData::DataSlice DataSlice;
 
-    /**
-     * @brief Advance condition function
-     *
-     * @param[in] s_id Vertex Id of the edge source node
-     * @param[in] d_id Vertex Id of the edge destination node
-     * @param[in] problem Data slice object
-     * @param[in] e_id Output edge id
-     * @param[in] e_id_in Input edge id
-     *
-     * \return Whether to load the apply function for the edge and
-     *         include the destination node in the next frontier.
-     */
-    static __device__ __forceinline__ bool
-    CondEdge(VertexId s_id, VertexId d_id, DataSlice *problem,
-             VertexId e_id = 0, VertexId e_id_in = 0) {
-        return true;  // TODO: advance condition function
-    }
+  /**
+   * @brief Advance condition function
+   *
+   * @param[in] s_id Vertex Id of the edge source node
+   * @param[in] d_id Vertex Id of the edge destination node
+   * @param[in] problem Data slice object
+   * @param[in] e_id Output edge id
+   * @param[in] e_id_in Input edge id
+   *
+   * \return Whether to load the apply function for the edge and
+   *         include the destination node in the next frontier.
+   */
+  static __device__ __forceinline__ bool CondEdge(VertexId s_id, VertexId d_id,
+                                                  DataSlice *problem,
+                                                  VertexId e_id = 0,
+                                                  VertexId e_id_in = 0) {
+    return true;  // TODO: advance condition function
+  }
 
-    /**
-     * @brief Advance apply function
-     *
-     * @param[in] s_id Vertex Id of the edge source node
-     * @param[in] d_id Vertex Id of the edge destination node
-     * @param[in] problem Data slice object
-     * @param[in] e_id Output edge id
-     * @param[in] e_id_in Input edge id
-     *
-     */
-    static __device__ __forceinline__ void
-    ApplyEdge(VertexId s_id, VertexId d_id, DataSlice *problem,
-              VertexId e_id = 0, VertexId e_id_in = 0) {
-        // TODO: advance apply function
-    }
+  /**
+   * @brief Advance apply function
+   *
+   * @param[in] s_id Vertex Id of the edge source node
+   * @param[in] d_id Vertex Id of the edge destination node
+   * @param[in] problem Data slice object
+   * @param[in] e_id Output edge id
+   * @param[in] e_id_in Input edge id
+   *
+   */
+  static __device__ __forceinline__ void ApplyEdge(VertexId s_id, VertexId d_id,
+                                                   DataSlice *problem,
+                                                   VertexId e_id = 0,
+                                                   VertexId e_id_in = 0) {
+    // TODO: advance apply function
+  }
 
-    /**
-     * @brief filter condition function
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v Auxiliary value
-     *
-     * \return Whether to load the apply function for the node and
-     *         include it in the outgoing vertex frontier.
-     */
-    static __device__ __forceinline__ bool
-    CondFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid = 0) {
-        return true;  // TODO: filter condition function
-    }
+  /**
+   * @brief filter condition function
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v Auxiliary value
+   *
+   * \return Whether to load the apply function for the node and
+   *         include it in the outgoing vertex frontier.
+   */
+  static __device__ __forceinline__ bool CondFilter(VertexId node,
+                                                    DataSlice *problem,
+                                                    Value v = 0,
+                                                    SizeT nid = 0) {
+    return true;  // TODO: filter condition function
+  }
 
-    /**
-     * @brief filter apply function
-     *
-     * @param[in] node Vertex Id
-     * @param[in] problem Data slice object
-     * @param[in] v Auxiliary value
-     *
-     */
-    static __device__ __forceinline__ void
-    ApplyFilter(VertexId node, DataSlice *problem, Value v = 0, SizeT nid = 0) {
-        // TODO: filter apply function
-    }
+  /**
+   * @brief filter apply function
+   *
+   * @param[in] node Vertex Id
+   * @param[in] problem Data slice object
+   * @param[in] v Auxiliary value
+   *
+   */
+  static __device__ __forceinline__ void ApplyFilter(VertexId node,
+                                                     DataSlice *problem,
+                                                     Value v = 0,
+                                                     SizeT nid = 0) {
+    // TODO: filter apply function
+  }
 };
 
 }  // namespace sample

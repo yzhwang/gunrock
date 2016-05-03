@@ -5,7 +5,6 @@
 // in the root directory of this source distribution.
 // ----------------------------------------------------------------
 
-
 /**
  * @file
  * cta.cuh
@@ -24,8 +23,7 @@
 
 #include <gunrock/util/scan/soa/cooperative_soa_scan.cuh>
 
-
-//TODO: use CUB for SOA scan
+// TODO: use CUB for SOA scan
 
 namespace gunrock {
 namespace oprtr {
@@ -36,33 +34,27 @@ namespace edge_map_partitioned {
 // than 1024
 
 template <int NT>
-__device__ int BinarySearch(unsigned int i, unsigned int *queue)
-{
-    int mid = (NT/2 - 1);
+__device__ int BinarySearch(unsigned int i, unsigned int *queue) {
+  int mid = (NT / 2 - 1);
 
-    if (NT > 512)
-        mid = queue[mid] > i ? mid - 256 : mid + 256;
-    if (NT > 256)
-        mid = queue[mid] > i ? mid - 128 : mid + 128;
-    if (NT > 128)
-        mid = queue[mid] > i ? mid - 64 : mid + 64;
-    if (NT > 64)
-        mid = queue[mid] > i ? mid - 32 : mid + 32;
-    if (NT > 32)
-        mid = queue[mid] > i ? mid - 16 : mid + 16;
-    mid = queue[mid] > i ? mid - 8 : mid + 8;
-    mid = queue[mid] > i ? mid - 4 : mid + 4;
-    mid = queue[mid] > i ? mid - 2 : mid + 2;
-    mid = queue[mid] > i ? mid - 1 : mid + 1;
+  if (NT > 512) mid = queue[mid] > i ? mid - 256 : mid + 256;
+  if (NT > 256) mid = queue[mid] > i ? mid - 128 : mid + 128;
+  if (NT > 128) mid = queue[mid] > i ? mid - 64 : mid + 64;
+  if (NT > 64) mid = queue[mid] > i ? mid - 32 : mid + 32;
+  if (NT > 32) mid = queue[mid] > i ? mid - 16 : mid + 16;
+  mid = queue[mid] > i ? mid - 8 : mid + 8;
+  mid = queue[mid] > i ? mid - 4 : mid + 4;
+  mid = queue[mid] > i ? mid - 2 : mid + 2;
+  mid = queue[mid] > i ? mid - 1 : mid + 1;
 
-    mid = queue[mid] <= i ? mid + 1 : mid;
+  mid = queue[mid] <= i ? mid + 1 : mid;
 
-    return mid;
+  return mid;
 }
 
-} //namespace edge_map_partitioned
-} //namespace oprtr
-} //namespace gunrock
+}  // namespace edge_map_partitioned
+}  // namespace oprtr
+}  // namespace gunrock
 
 // Leave this at the end of the file
 // Local Variables:

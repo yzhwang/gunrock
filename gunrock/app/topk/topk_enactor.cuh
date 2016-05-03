@@ -42,35 +42,32 @@ namespace topk {
  * @tparam INSTRUMWENT Boolean type to show whether or not to collect
  * per-CTA clock-count statistics
  */
-template<bool INSTRUMENT>
-class TOPKEnactor : public EnactorBase
-{
-// Members
-protected:
-
+template <bool INSTRUMENT>
+class TOPKEnactor : public EnactorBase {
+  // Members
+ protected:
   /**
    * CTA duty kernel stats
    */
 
-  unsigned long long total_runtimes;  // Total working time by each CTA
-  unsigned long long total_lifetimes; // Total life time of each CTA
+  unsigned long long total_runtimes;   // Total working time by each CTA
+  unsigned long long total_lifetimes;  // Total life time of each CTA
   unsigned long long total_queued;
 
   /**
    * A pinned, mapped word that the traversal kernels will signal when done
    */
-  volatile int        *done;
-  int                 *d_done;
-  cudaEvent_t         throttle_event;
+  volatile int *done;
+  int *d_done;
+  cudaEvent_t throttle_event;
 
   /**
    * Current iteration
    */
-  long long           iteration;
+  long long iteration;
 
-// Methods
-protected:
-
+  // Methods
+ protected:
   /**
    * @brief Prepare the enactor for TOPK kernel call.
    *
@@ -79,56 +76,55 @@ protected:
    * \return cudaError_t object which indicates the success of all CUDA calls.
    */
   template <typename ProblemData>
-  cudaError_t Setup(ProblemData *problem)
-  {
-    typedef typename ProblemData::SizeT     SizeT;
-    typedef typename ProblemData::VertexId  VertexId;
+  cudaError_t Setup(ProblemData *problem) {
+    typedef typename ProblemData::SizeT SizeT;
+    typedef typename ProblemData::VertexId VertexId;
 
     cudaError_t retval = cudaSuccess;
 
-    //initialize the host-mapped "done"
-    if (!done)
-    {
+    // initialize the host-mapped "done"
+    if (!done) {
       int flags = cudaHostAllocMapped;
 
       // Allocate pinned memory for done
-      if (retval = util::GRError(cudaHostAlloc(
-        (void**)&done, sizeof(int) * 1, flags),
-        "TOPKEnactor cudaHostAlloc done failed",
-        __FILE__, __LINE__)) return retval;
+      if (retval = util::GRError(
+              cudaHostAlloc((void **)&done, sizeof(int) * 1, flags),
+              "TOPKEnactor cudaHostAlloc done failed", __FILE__, __LINE__))
+        return retval;
 
       // Map done into GPU space
-      if (retval = util::GRError(cudaHostGetDevicePointer(
-        (void**)&d_done, (void*) done, 0),
-        "TOPKEnactor cudaHostGetDevicePointer done failed",
-        __FILE__, __LINE__)) return retval;
+      if (retval = util::GRError(
+              cudaHostGetDevicePointer((void **)&d_done, (void *)done, 0),
+              "TOPKEnactor cudaHostGetDevicePointer done failed", __FILE__,
+              __LINE__))
+        return retval;
 
       // Create throttle event
-      if (retval = util::GRError(cudaEventCreateWithFlags(
-        &throttle_event, cudaEventDisableTiming),
-        "TOPKEnactor cudaEventCreateWithFlags throttle_event failed",
-        __FILE__, __LINE__)) return retval;
+      if (retval = util::GRError(
+              cudaEventCreateWithFlags(&throttle_event, cudaEventDisableTiming),
+              "TOPKEnactor cudaEventCreateWithFlags throttle_event failed",
+              __FILE__, __LINE__))
+        return retval;
     }
 
-    //graph slice
+    // graph slice
     typename ProblemData::GraphSlice *graph_slice = problem->graph_slices[0];
-    //typename ProblemData::DataSlice  *data_slice  = problem->data_slices[0];
+    // typename ProblemData::DataSlice  *data_slice  = problem->data_slices[0];
 
-    do
-    {
+    do {
       // Bind row-offsets and bitmask texture
-      cudaChannelFormatDesc   row_offsets_desc = cudaCreateChannelDesc<SizeT>();
-      if (retval = util::GRError(cudaBindTexture(
-        0,
-        gunrock::oprtr::edge_map_forward::RowOffsetTex<SizeT>::ref,
-        graph_slice->d_row_offsets,
-        row_offsets_desc,
-        (graph_slice->nodes + 1) * sizeof(SizeT)),
-        "TOPKEnactor cudaBindTexture row_offset_tex_ref failed",
-        __FILE__, __LINE__)) break;
+      cudaChannelFormatDesc row_offsets_desc = cudaCreateChannelDesc<SizeT>();
+      if (retval = util::GRError(
+              cudaBindTexture(
+                  0, gunrock::oprtr::edge_map_forward::RowOffsetTex<SizeT>::ref,
+                  graph_slice->d_row_offsets, row_offsets_desc,
+                  (graph_slice->nodes + 1) * sizeof(SizeT)),
+              "TOPKEnactor cudaBindTexture row_offset_tex_ref failed", __FILE__,
+              __LINE__))
+        break;
 
-
-      /*cudaChannelFormatDesc column_indices_desc = cudaCreateChannelDesc<VertexId>();
+      /*cudaChannelFormatDesc column_indices_desc =
+      cudaCreateChannelDesc<VertexId>();
       if (retval = util::GRError(cudaBindTexture(
         0,
         gunrock::oprtr::edge_map_forward::ColumnIndicesTex<SizeT>::ref,
@@ -141,30 +137,28 @@ protected:
     return retval;
   }
 
-public:
-
+ public:
   /**
    * @brief TOPKEnactor constructor
    */
-  TOPKEnactor(bool DEBUG = false) :
-    EnactorBase(EDGE_FRONTIERS, DEBUG),
-    iteration(0),
-    total_queued(0),
-    done(NULL),
-    d_done(NULL) {}
+  TOPKEnactor(bool DEBUG = false)
+      : EnactorBase(EDGE_FRONTIERS, DEBUG),
+        iteration(0),
+        total_queued(0),
+        done(NULL),
+        d_done(NULL) {}
 
   /**
    * @brief TOPKEnactor destructor
    */
-  virtual ~TOPKEnactor()
-  {
-    if (done)
-    {
-      util::GRError(cudaFreeHost((void*)done),
-      "TOPKEnactor cudaFreeHost done failed", __FILE__, __LINE__);
+  virtual ~TOPKEnactor() {
+    if (done) {
+      util::GRError(cudaFreeHost((void *)done),
+                    "TOPKEnactor cudaFreeHost done failed", __FILE__, __LINE__);
 
       util::GRError(cudaEventDestroy(throttle_event),
-      "TOPKEnactor cudaEventDestroy throttle_event failed", __FILE__, __LINE__);
+                    "TOPKEnactor cudaEventDestroy throttle_event failed",
+                    __FILE__, __LINE__);
     }
   }
 
@@ -182,18 +176,15 @@ public:
    * (kernel run time/kernel lifetime).
    */
   template <typename VertexId>
-  void GetStatistics(
-    long long   &total_queued,
-    VertexId    &search_depth,
-    double      &avg_duty)
-  {
+  void GetStatistics(long long &total_queued, VertexId &search_depth,
+                     double &avg_duty) {
     cudaThreadSynchronize();
 
     total_queued = this->total_queued;
     search_depth = this->iteration;
 
-    avg_duty = (total_lifetimes > 0) ?
-      double(total_runtimes) / total_lifetimes : 0.0;
+    avg_duty =
+        (total_lifetimes > 0) ? double(total_runtimes) / total_lifetimes : 0.0;
   }
 
   /** @} */
@@ -211,78 +202,65 @@ public:
    *
    * \return cudaError_t object which indicates the success of all CUDA calls.
    */
-  template<
-    typename AdvanceKernelPolicy,
-    typename FilterKernelPolicy,
-    typename TOPKProblem>
-  cudaError_t EnactTOPK(
-    TOPKProblem *problem,
-    int         top_nodes,
-    int         max_grid_size = 0)
-  {
-    typedef typename TOPKProblem::SizeT    SizeT;
-    typedef typename TOPKProblem::Value    Value;
+  template <typename AdvanceKernelPolicy, typename FilterKernelPolicy,
+            typename TOPKProblem>
+  cudaError_t EnactTOPK(TOPKProblem *problem, int top_nodes,
+                        int max_grid_size = 0) {
+    typedef typename TOPKProblem::SizeT SizeT;
+    typedef typename TOPKProblem::Value Value;
     typedef typename TOPKProblem::VertexId VertexId;
 
     typedef TOPKFunctor<VertexId, SizeT, Value, TOPKProblem> TopkFunctor;
 
     cudaError_t retval = cudaSuccess;
 
-    do
-    {
+    do {
       // initialization
       if (retval = Setup(problem)) break;
-      if (retval = EnactorBase::Setup(
-        max_grid_size,
-        AdvanceKernelPolicy::CTA_OCCUPANCY,
-        FilterKernelPolicy::CTA_OCCUPANCY)) break;
+      if (retval = EnactorBase::Setup(max_grid_size,
+                                      AdvanceKernelPolicy::CTA_OCCUPANCY,
+                                      FilterKernelPolicy::CTA_OCCUPANCY))
+        break;
 
       // single gpu graph slice
       typename TOPKProblem::GraphSlice *graph_slice = problem->graph_slices[0];
 
       // add out-going and in-going degrees -> sum stored in d_degrees_s
-      util::MemsetCopyVectorKernel<<<128, 128>>>(
-        problem->data_slices[0]->d_degrees_s,
-        problem->data_slices[0]->d_degrees_o,
-        graph_slice->nodes);
-      util::MemsetAddVectorKernel<<<128, 128>>>(
-        problem->data_slices[0]->d_degrees_s,
-        problem->data_slices[0]->d_degrees_i,
-        graph_slice->nodes);
+      util::MemsetCopyVectorKernel <<<128, 128>>>
+          (problem->data_slices[0]->d_degrees_s,
+           problem->data_slices[0]->d_degrees_o, graph_slice->nodes);
+      util::MemsetAddVectorKernel <<<128, 128>>>
+          (problem->data_slices[0]->d_degrees_s,
+           problem->data_slices[0]->d_degrees_i, graph_slice->nodes);
 
       // sort node_ids by degree centralities
-      util::MemsetCopyVectorKernel<<<128, 128>>>(
-        problem->data_slices[0]->d_temp_i,
-        problem->data_slices[0]->d_degrees_s,
-        graph_slice->nodes);
-      util::MemsetCopyVectorKernel<<<128, 128>>>(
-        problem->data_slices[0]->d_temp_o,
-        problem->data_slices[0]->d_degrees_s,
-        graph_slice->nodes);
-      util::CUBRadixSort<Value, VertexId>(
-        false, graph_slice->nodes,
-        problem->data_slices[0]->d_degrees_s,
-        problem->data_slices[0]->d_node_id);
-      util::CUBRadixSort<Value, VertexId>(
-        false, graph_slice->nodes,
-        problem->data_slices[0]->d_temp_i,
-        problem->data_slices[0]->d_degrees_i);
-      util::CUBRadixSort<Value, VertexId>(
-        false, graph_slice->nodes,
-        problem->data_slices[0]->d_temp_o,
-        problem->data_slices[0]->d_degrees_o);
+      util::MemsetCopyVectorKernel <<<128, 128>>>
+          (problem->data_slices[0]->d_temp_i,
+           problem->data_slices[0]->d_degrees_s, graph_slice->nodes);
+      util::MemsetCopyVectorKernel <<<128, 128>>>
+          (problem->data_slices[0]->d_temp_o,
+           problem->data_slices[0]->d_degrees_s, graph_slice->nodes);
+      util::CUBRadixSort<Value, VertexId>(false, graph_slice->nodes,
+                                          problem->data_slices[0]->d_degrees_s,
+                                          problem->data_slices[0]->d_node_id);
+      util::CUBRadixSort<Value, VertexId>(false, graph_slice->nodes,
+                                          problem->data_slices[0]->d_temp_i,
+                                          problem->data_slices[0]->d_degrees_i);
+      util::CUBRadixSort<Value, VertexId>(false, graph_slice->nodes,
+                                          problem->data_slices[0]->d_temp_o,
+                                          problem->data_slices[0]->d_degrees_o);
 
       // check if any of the frontiers overflowed due to redundant expansion
       bool overflowed = false;
       if (retval = work_progress.CheckOverflow<SizeT>(overflowed)) break;
-      if (overflowed)
-      {
+      if (overflowed) {
         retval = util::GRError(
-          cudaErrorInvalidConfiguration,
-          "Frontier queue overflow. Please increase queus size factor.",
-          __FILE__, __LINE__); break;
+            cudaErrorInvalidConfiguration,
+            "Frontier queue overflow. Please increase queus size factor.",
+            __FILE__, __LINE__);
+        break;
       }
-    } while(0);
+    } while (0);
     if (DEBUG) printf("==> GPU Top K Degree Centrality Complete.\n");
     return retval;
   }
@@ -301,62 +279,57 @@ public:
    * @param[in] top_nodes Number of nodes to process for Top-K algorithm
    * @param[in] max_grid_size Max grid size for TOPK kernel calls.
    *
-   * \return cudaError_t object which indicates the success of all CUDA function calls.
+   * \return cudaError_t object which indicates the success of all CUDA function
+   *calls.
    */
   template <typename TOPKProblem>
-  cudaError_t Enact(
-    TOPKProblem *problem,
-    int         top_nodes,
-    int         max_grid_size = 0)
-  {
-    if (this->cuda_props.device_sm_version >= 300)
-    {
+  cudaError_t Enact(TOPKProblem *problem, int top_nodes,
+                    int max_grid_size = 0) {
+    if (this->cuda_props.device_sm_version >= 300) {
       typedef gunrock::oprtr::filter::KernelPolicy<
-        TOPKProblem,            // Problem data type
-        300,                    // CUDA_ARCH
-        INSTRUMENT,             // INSTRUMENT
-        0,                      // SATURATION QUIT
-        true,                   // DEQUEUE_PROBLEM_SIZE
-        8,                      // MIN_CTA_OCCUPANCY
-        8,                      // LOG_THREADS
-        1,                      // LOG_LOAD_VEC_SIZE
-        0,                      // LOG_LOADS_PER_TILE
-        5,                      // LOG_RAKING_THREADS
-        5,                      // END_BITMASK_CULL
-        8>                      // LOG_SCHEDULE_GRANULARITY
-        FilterKernelPolicy;
+          TOPKProblem,  // Problem data type
+          300,          // CUDA_ARCH
+          INSTRUMENT,   // INSTRUMENT
+          0,            // SATURATION QUIT
+          true,         // DEQUEUE_PROBLEM_SIZE
+          8,            // MIN_CTA_OCCUPANCY
+          8,            // LOG_THREADS
+          1,            // LOG_LOAD_VEC_SIZE
+          0,            // LOG_LOADS_PER_TILE
+          5,            // LOG_RAKING_THREADS
+          5,            // END_BITMASK_CULL
+          8>            // LOG_SCHEDULE_GRANULARITY
+          FilterKernelPolicy;
 
       typedef gunrock::oprtr::advance::KernelPolicy<
-        TOPKProblem,            // Problem data type
-        300,                    // CUDA_ARCH
-        INSTRUMENT,             // INSTRUMENT
-        8,                      // MIN_CTA_OCCUPANCY
-        7,                      // LOG_THREADS
-        8,                      // LOG_BLOCKS
-        32*128,                 // LIGHT_EDGE_THRESHOLD (used for partitioned advance mode)
-        1,                      // LOG_LOAD_VEC_SIZE
-        0,                      // LOG_LOADS_PER_TILE
-        5,                      // LOG_RAKING_THREADS
-        32,                     // WARP_GATHER_THRESHOLD
-        128 * 4,                // CTA_GATHER_THRESHOLD
-        7,                      // LOG_SCHEDULE_GRANULARITY
-        gunrock::oprtr::advance::TWC_FORWARD>
-        AdvanceKernelPolicy;
+          TOPKProblem,  // Problem data type
+          300,          // CUDA_ARCH
+          INSTRUMENT,   // INSTRUMENT
+          8,            // MIN_CTA_OCCUPANCY
+          7,            // LOG_THREADS
+          8,            // LOG_BLOCKS
+          32 * 128,  // LIGHT_EDGE_THRESHOLD (used for partitioned advance mode)
+          1,         // LOG_LOAD_VEC_SIZE
+          0,         // LOG_LOADS_PER_TILE
+          5,         // LOG_RAKING_THREADS
+          32,        // WARP_GATHER_THRESHOLD
+          128 * 4,   // CTA_GATHER_THRESHOLD
+          7,         // LOG_SCHEDULE_GRANULARITY
+          gunrock::oprtr::advance::TWC_FORWARD> AdvanceKernelPolicy;
 
-      return  EnactTOPK<AdvanceKernelPolicy, FilterKernelPolicy, TOPKProblem>(
-        problem, top_nodes,  max_grid_size);
+      return EnactTOPK<AdvanceKernelPolicy, FilterKernelPolicy, TOPKProblem>(
+          problem, top_nodes, max_grid_size);
     }
     printf("Not yet tuned for this architecture\n");
     return cudaErrorInvalidDeviceFunction;
   }
 
   /** @} */
-
 };
 
-} // namespace topk
-} // namespace app
-} // namespace gunrock
+}  // namespace topk
+}  // namespace app
+}  // namespace gunrock
 
 // Leave this at the end of the file
 // Local Variables:

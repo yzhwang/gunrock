@@ -36,16 +36,15 @@ namespace graphio {
  * \return random node-ID
  */
 template <typename SizeT>
-SizeT RandomNode (SizeT num_nodes)
-{
-    SizeT node_id;
-    util::RandomBits(node_id);
-    if (node_id < 0) node_id *= -1;
-    return node_id % num_nodes;
+SizeT RandomNode(SizeT num_nodes) {
+  SizeT node_id;
+  util::RandomBits(node_id);
+  if (node_id < 0) node_id *= -1;
+  return node_id % num_nodes;
 }
 
-} // namespace graphio
-} // namespace gunrock
+}  // namespace graphio
+}  // namespace gunrock
 
 // Leave this at the end of the file
 // Local Variables:

@@ -17,41 +17,29 @@
 namespace gunrock {
 namespace util {
 
+/**
+ * Displays error message in accordance with debug mode
+ */
+cudaError_t GRError(cudaError_t error, const char *message,
+                    const char *filename, int line, bool print = true);
+
+/**
+ * Checks and resets last CUDA error.  If set, displays last error message in
+ * accordance with debug mode.
+ */
+cudaError_t GRError(const char *message, const char *filename, int line,
+                    bool print = true);
 
 /**
  * Displays error message in accordance with debug mode
  */
-cudaError_t GRError(
-    cudaError_t error,
-    const char *message,
-    const char *filename,
-    int line,
-    bool print = true);
+cudaError_t GRError(cudaError_t error, bool print = true);
 
 /**
- * Checks and resets last CUDA error.  If set, displays last error message in accordance with debug mode.
+ * Checks and resets last CUDA error.  If set, displays last error message in
+ * accordance with debug mode.
  */
-cudaError_t GRError(
-    const char *message,
-    const char *filename,
-    int line,
-    bool print = true);
+cudaError_t GRError(bool print = true);
 
-/**
- * Displays error message in accordance with debug mode
- */
-cudaError_t GRError(
-    cudaError_t error,
-    bool print = true);
-
-
-/**
- * Checks and resets last CUDA error.  If set, displays last error message in accordance with debug mode.
- */
-cudaError_t GRError(
-    bool print = true);
-	
-
-} // namespace util
-} // namespace gunrock
-
+}  // namespace util
+}  // namespace gunrock
