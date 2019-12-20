@@ -24,6 +24,7 @@
 #include <unordered_map>
 
 #include <gunrock/util/parameters.h>
+#include <gunrock/util/hdfs.cuh>
 #include <gunrock/graph/coo.cuh>
 
 namespace gunrock {
@@ -31,6 +32,217 @@ namespace graphio {
 namespace csv {
 
 typedef std::map<std::string, std::string> MetaData;
+
+template <typename GraphT>
+cudaError_t ReadCSVHDFS(util::Parameters &parameters,
+                          GraphT &graph,
+                          MetaData &meta_data,
+                          std::string graph_prefix = "") {
+  typedef typename GraphT::VertexT VertexT;
+  typedef typename GraphT::SizeT SizeT;
+  typedef typename GraphT::ValueT ValueT;
+  typedef typename GraphT::EdgePairT EdgePairT;
+  typedef typename GraphT::CooT CooT;
+
+  cudaError_t retval = cudaSuccess;
+  bool quiet = parameters.Get<bool>("quiet");
+
+  std::string path =
+      parameters.Get<std::string>(graph_prefix + "graph-file");
+  if (path.length() > 0 && path[path.length() - 1] != '/') {
+    // force a "/" at the end of the path
+    path = path + "/";
+  }
+      
+  if(!util::Hdfs::has_hadoop()) {
+    util::GRError("Attempting to load a graph from HDFS but Gunrock"
+            "was built without HDFS.", __FILE__, __LINE__);
+  }
+  
+  util::Hdfs& hdfs = hdfs::get_hdfs();
+  std::vector<std::string> graph_files;
+  graph_files = hdfs.list_files(path);
+  if (graph_files.size() == 0) {
+    util::GRError("No files found matching " + path,
+                  __FILE__, __LINE__);
+  }
+
+  auto &edge_pairs = graph.CooT::edge_pairs;
+  bool got_edge_values = false;
+
+  time_t mark0 = time(NULL);
+  GUARD_CU(graph.CooT::Release());
+
+  util::PrintMsg("Loading graph from HDFS.", !quiet, false);
+
+  std::unordered_map<std::string, VertexT> vid_mapper;
+  SizeT node_count = 0;
+  SizeT edge_count = 0;
+  bool write_in_gzip = false;
+  for(size_t i = 0; i < graph_files.size(); ++i) {
+    // is it a gzip file ?
+    const bool gzip = boost::ends_with(graph_files[i], ".gz");
+    // open the stream
+    util::Hdfs::fstream in_file(hdfs, graph_files[i]);
+    boost::iostreams::filtering_stream<boost::iostreams::input> fin;
+    if(gzip) fin.push(boost::iostreams::gzip_decompressor());
+    fin.push(in_file);
+
+    std::string line;
+    while(fin.good() && !fin.eof()) {
+      std::getline(fin, line);
+      if(line.empty()) continue;
+      if(fin.fail()) break;
+
+      long long src_id, dst_id;
+      int num_input = sscanf(line.c_str(), "%lld,%lld", &src_id, &dst_id);
+      if (num_input != 2) {
+          GUARD_CU(graph.CooT::Release());
+          return util::GRError(cudaErrorUnknown,
+                                "Error parsing csv graph: "
+                                "badly formed edge",
+                                __FILE__, __LINE__);
+      }
+      if (vid_mapper.find(std::to_string(src_id)) == vid_mapper.end()) {
+        vid_mapper[std::to_string(src_id)] = node_count++;
+      }
+      if (vid_mapper.find(std::to_string(dst_id)) == vid_mapper.end()) {
+        vid_mapper[std::to_string(dst_id)] = node_count++;
+      }
+      edge_count++;
+    }
+
+    fin.pop();
+    if (gzip) fin.pop();
+  }
+
+  // Allocate coo graph
+  GUARD_CU(graph.CooT::Allocate(node_count, edge_count, util::HOST));
+
+  edge_count = 0;
+  // Read again to put edge list into edge_pairs.
+  for(size_t i = 0; i < graph_files.size(); ++i) {
+    // is it a gzip file ?
+    const bool gzip = boost::ends_with(graph_files[i], ".gz");
+    // open the stream
+    util::Hdfs::fstream in_file(hdfs, graph_files[i]);
+    boost::iostreams::filtering_stream<boost::iostreams::input> fin;
+    if(gzip) fin.push(boost::iostreams::gzip_decompressor());
+    fin.push(in_file);
+
+    std::string line;
+    while(fin.good() && !fin.eof()) {
+      std::getline(fin, line);
+      if(line.empty()) continue;
+      if(fin.fail()) break;
+
+      long long src_id, dst_id;
+      ValueT ll_value;
+      double lf_value;
+      int num_input;
+      if (GraphT::FLAG & graph::HAS_EDGE_VALUES) {
+        num_input = sscanf(line.c_str(), "%lld,%lld,%lf", &src_id, &dst_id,
+        &lf_value);
+
+        if (num_input < 2) {
+          GUARD_CU(graph.CooT::Release());
+          return util::GRError(cudaErrorUnknown,
+                              "Error parsing csv graph: "
+                              "badly formed edge",
+                              __FILE__, __LINE__);
+        } else if (num_input == 2) {
+          ll_value = 1;
+        } else if (num_input > 2) {
+          if (typeid(ValueT) == typeid(float) ||
+              typeid(ValueT) == typeid(double) ||
+              typeid(ValueT) == typeid(long double))
+            ll_value = (ValueT)lf_value;
+          else
+            ll_value = (ValueT)(lf_value + 1e-10);
+          got_edge_values = true;
+        }
+      } else { // if (GraphT::FLAG & graph::HAS_EDGE_VALUES)
+        num_input = sscanf(line.c_str(), "%lld,%lld", &src_id, &dst_id);
+        if (num_input != 2) {
+            GUARD_CU(graph.CooT::Release());
+            return util::GRError(cudaErrorUnknown,
+                                "Error parsing csv graph: "
+                                "badly formed edge",
+                                __FILE__, __LINE__);
+        }
+      }
+
+      edge_pairs[i].x = vid_mapper[std::to_string(src_id)];  // zero-based array
+      edge_pairs[i].y = vid_mapper[std::to_string(dst_id)];  // zero-based array
+
+      if (GraphT::FLAG & graph::HAS_EDGE_VALUES) {
+        graph.CooT::edge_values[i] = ll_value;
+      }
+
+      edge_count++;
+    }
+
+    fin.pop();
+    if (gzip) fin.pop();
+    write_in_gzip = gzip;
+  }
+
+  // Write VID mapping to file
+  typedef util::Hdfs::fstream base_fstream_type;
+  typedef boost::iostreams::filtering_stream<boost::iostreams::output>
+    boost_fstream_type;
+
+  std::vector<std::string> vid_mapping_files;
+  std::vector<base_fstream_type*> outstreams;
+  const SizeT node_per_file = (1 << 20) - 1;
+  SizeT num_files = node_count / (node_per_file);
+  vid_mapping_files.resize(num_files);
+  for (size_t i = 0; i < num_files; ++i) {
+    vid_mapping_files[i] = prefix + "vid_mapping_" + std::to_string(1+i)
+    + "_of_" + std::to_string(num_files);
+    if (write_in_gzip) vid_mapping_files[i] += ".gz";
+  }
+
+  if(!util::Hdfs::has_hadoop()) {
+    util::GRError("Attempting to write vid mapping to HDFS but Gunrock"
+            "was built without HDFS.", __FILE__, __LINE__);
+  }
+  
+  util::Hdfs& hdfs = hdfs::get_hdfs();
+
+  SizeT visited_node = 0;
+  boost_fstream_type* fout_current = nullptr;
+  for (std::pair<std::string, VertexT> element : vid_mapper) {
+    if (visited_node%(node_per_file+1) == 0) {
+      if (fout_current != nullptr) {
+        fout_current->pop();
+        if (write_in_gzip) fout_current_pop();
+      }
+      SizeT i = visited_node/(node_per_file+1);
+      util::PrintMsg("Saving to file: " + vid_mapping_files[i], !quiet, false);
+      // open the stream
+      base_fstream_type* out_file = new base_fstream_type(hdfs,
+                    vid_mapping_files[i], true);
+      // attach gzip if the file is gzip
+      boost_fstream_type* fout = new boost_fstream_type;
+      // Using gzip filter
+      if (write_in_gzip) fout->push(boost::iostreams::gzip_compressor());
+      fout->push(*out_file);
+      fout_current = fout;
+    }
+    fout_current << element.first << ", " << element.second << std::endl;
+    visited_node++;
+  }
+
+  time_t mark1 = time(NULL);
+  util::PrintMsg("  Done (" + std::to_string(mark1 - mark0) + " s).", !quiet);
+
+  meta_data["got_edge_values"] = got_edge_values ? "true" : "false";
+  meta_data["num_edges"] = std::to_string(edge_count);
+  meta_data["num_vertices"] = std::to_string(node_count);
+  return retval;
+
+}
 
 /**
  * @brief Reads a comma-separated value graph from an input-stream
